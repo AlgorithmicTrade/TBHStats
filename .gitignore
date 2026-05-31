@@ -37,3 +37,4 @@ GeneratedArtifacts/
 [Tt]est[Rr]esults/
 .verify.log
 .tmp_*
+.dbg.txt

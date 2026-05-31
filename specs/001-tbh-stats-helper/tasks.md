@@ -184,15 +184,15 @@ tests/TBHStats.Core.Tests   tests/TBHStats.Capture.Tests   tests/TBHStats.Data.T
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T043 [P] [US3] Тесты выборки сэмплов для трендов (диапазон времени, по этапу) в `tests/TBHStats.Data.Tests/SampleQueryTests.cs`
+- [X] T043 [P] [US3] Тесты выборки сэмплов для трендов (диапазон времени, по этапу) в `tests/TBHStats.Data.Tests/SampleQueryTests.cs`. Реальный temp-SQLite: 6 тестов `GetSamplesTests` (диапазон, граничная включительность, фильтр по этапу, пустой, сундуки через Include, переживание перезапуска) GREEN + 5 тестов `PruneSamplesTests` (удаление старше cutoff строго `<`, изоляция этапа, идемпотентность, сохранность StageRun/агрегатов, удаление ненадёжных) RED до T044. Доп. контракт: `IRunRepository.PruneSamplesAsync` + скелет в RunRepository. Build PASS, Data.Tests 50/55 (5 ожидаемо RED) → Artifacts: SampleQueryTests.cs, IRunRepository.cs, RunRepository.cs
 
 ### Implementation for User Story 3
 
-- [ ] T044 [US3] Выборка/ретенция `MetricSample` для трендов по этапу в `src/TBHStats.Data/Repositories/RunRepository.cs` (depends on T037)
-- [ ] T045 [US3] Экран графиков (LiveCharts2): тренды золото/час, опыт/час, время; тултипы по точкам в `src/TBHStats.App/Views/ChartsView.xaml(.cs)` (depends on T002)
-- [ ] T046 [US3] ViewModel графиков в `src/TBHStats.App/ViewModels/ChartsViewModel.cs` (depends on T044)
+- [X] T044 [US3] Выборка/ретенция `MetricSample` для трендов по этапу в `src/TBHStats.Data/Repositories/RunRepository.cs` (depends on T037). `GetSamplesAsync` (выборка для трендов) подтверждён тестами T043; реализован `PruneSamplesAsync` — двухшаговый bulk `ExecuteDeleteAsync` (сначала зависимые `MetricSampleChest`, затем `MetricSample`; SQLite без `PRAGMA foreign_keys` не каскадирует FK при bulk-delete — обосновано чтением `MetricSampleConfiguration` Cascade + `DatabaseInitializer`), строгий cutoff `<`, возврат числа удалённых, агрегаты/StageRun не затронуты. Data.Tests 55/55 GREEN (T043 PruneSamplesTests → GREEN) → Artifacts: RunRepository.cs
+- [X] T045 [US3] Экран графиков (LiveCharts2): тренды золото/час, опыт/час, время; тултипы по точкам в `src/TBHStats.App/Views/ChartsView.xaml(.cs)` (depends on T002). 3 `lvc:CartesianChart` (`TooltipPosition=Top`), `ComboBox` выбора этапа (`StageOptions`/`SelectedStage` TwoWay), пустое состояние, `ScrollViewer`; `ChartsHostWindow` (Frame.Navigate) + кнопка «Графики» в `WidgetWindow`. XAML-namespace `using:LiveChartsCore.SkiaSharpView.WinUI` (Context7-verified). Solution build 0/0 → Artifacts: ChartsView.xaml(.cs), ChartsHostWindow.xaml(.cs), WidgetWindow.xaml(.cs), ARCHITECTURE.md §7
+- [X] T046 [US3] ViewModel графиков в `src/TBHStats.App/ViewModels/ChartsViewModel.cs` (depends on T044). `ChartsViewModel` (Transient, scoped-репо через `IServiceScopeFactory`, маршалинг `DispatcherQueue`): загрузка non-partial `StageRun` по этапу → `LineSeries<DateTimePoint>` трендов золото/ч, опыт/ч, время(мин) над `CompletedAtUtc`; ось X `Labeler` dd.MM HH:mm; `StageOptions` (этапы с историей, метка через join Stage+Act+Difficulty); `OnSelectedStageChanged`→`RebuildSeriesAsync`. LiveCharts2 2.0.x API (Context7-verified, без моков). DI в Composition.cs. Solution build 0/0, Core 151/151, Data 55/55 → Artifacts: ChartsViewModel.cs, ChartsStageOption.cs, Composition.cs, ARCHITECTURE.md §7
 
-**Checkpoint**: все три истории независимо функциональны.
+**Checkpoint**: все три истории независимо функциональны. Solution build 0/0, Core 151/151, Data 55/55. US3: экран трендов (золото/ч, опыт/ч, время) по этапу на реальных записях `StageRun` + ретенция сэмплов (`PruneSamplesAsync`).
 
 ---
 

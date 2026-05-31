@@ -2,7 +2,7 @@
 
 **Проект**: TBHStats — десктоп-помощник по статистике для игры Task Bar Hero
 **Платформа**: Windows 11 (x64/arm64), один локальный пользователь
-**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010/T022/T023/T024/T025/T026/T028/T035–T042 US2 recency-aware)
+**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010/T022/T023/T024/T025/T026/T028/T035–T042 US2 recency-aware; T043–T046 US3 тренды/ретенция)
 **Спецификация-источник**: `specs/001-tbh-stats-helper/` (plan, research, data-model, contracts) · конституция `v2.2.0`
 
 > TBHStats наблюдает за окном запущенной игры, **визуально** считывает игровые показатели (золото, опыт, время этапа, класс/уровень/урон героя, текущий этап, сундуки по типам), вычисляет темпы (золото/час, опыт/час, сундуки/час), накапливает историю по 60 этапам (3 акта × 2 сложности × 10) и рекомендует оптимальный этап для фарма. Режим строго **observe-only**: никаких записей в память игры и инъекций ввода.
@@ -152,6 +152,7 @@
 - **EF Core миграции** расширяют схему под новые механики **без потери истории** (FR-013/FR-021); LINQ-агрегации для средних/лучших/темпов (FR-008).
 - Справочные сущности (`ChestType`, `HeroClass`, `Act`, `Difficulty`, `Tab`) — **данные, а не enum-в-коде**; история ссылается на их id → валидна после расширений.
 - **Тесты на реальном временном SQLite-файле** (не in-memory-мок БД) — чтобы проверять реальную SQL-семантику.
+- **Ретенция/прореживание сэмплов (US3, T044)**: `IRunRepository.PruneSamplesAsync(stageId, olderThanUtc, ct)` удаляет `MetricSample` этапа со временем строго раньше cutoff (двухшаговый bulk `ExecuteDeleteAsync`: сначала зависимые `MetricSampleChest`, затем сами сэмплы — SQLite без `PRAGMA foreign_keys=ON` не каскадирует FK при bulk-delete). `StageRun`/`StageAggregate` при этом НЕ затрагиваются (агрегаты сохраняются как материализованный кэш). Выборка для трендов — `GetSamplesAsync(stageId, DateRange, ct)` (диапазон включительный, сортировка по `TakenAtUtc`).
 
 Отклонены: LiteDB (слабее по миграциям/агрегации) и сырой JSON (нет индексов/конкурентной записи).
 
@@ -234,6 +235,7 @@ await DatabaseInitializer.InitializeAsync(db, ct);
 - При закрытии виджета — `IStatsOrchestrator.StopAsync()`.
 - Кнопка «Калибровка» открывает `CalibrationHostWindow` — отдельное окно-хост с Frame.Navigate(`CalibrationView`).
 - Кнопка «Сравнение» открывает `CompareHostWindow` — окно-хост с Frame.Navigate(`CompareView`) (US2, T041).
+- Кнопка «Графики» открывает `ChartsHostWindow` — окно-хост с Frame.Navigate(`ChartsView`) (US3, T045).
 
 Визуальные состояния (T031):
 - `IsGameFound == false` → красная плашка «Игра не найдена».
@@ -256,6 +258,15 @@ await DatabaseInitializer.InitializeAsync(db, ct);
 - Один API на все .NET-UI → переиспользуем при Android-клиенте на MAUI.
 
 **Альтернатива**: **ScottPlot** — быстр на плотных данных; держим как замену при проблемах со Skia-рендером в оверлее.
+
+### Экран трендов (T045/T046, US3)
+
+`ChartsView` (`TBHStats_App.Views`) + `ChartsViewModel` (`TBHStats.App.ViewModels`) + хост `ChartsHostWindow`:
+- Три `lvc:CartesianChart` (`using:LiveChartsCore.SkiaSharpView.WinUI`): тренды **золото/час**, **опыт/час**, **время прохождения (мин)** по выбранному этапу во времени; интерактивные тултипы (`TooltipPosition="Top"`, `X/YToolTipLabelFormatter`).
+- Источник данных — завершённые non-partial `StageRun` (одна точка `LineSeries<DateTimePoint>` на забег: x = `CompletedAtUtc`, y = `GoldPerHour`/`XpPerHour`/`DurationSeconds/60`). «Линии отражают реальные записи» (Independent Test US3).
+- `ComboBox` выбора этапа: `StageOptions` (только этапы с историей; метка «1-5 Nightmare» через тот же join Stage+Act+Difficulty, что и `CompareViewModel`); смена `SelectedStage` перестраивает серии (partial `OnSelectedStageChanged` → fire-and-forget `RebuildSeriesAsync`).
+- Ось X — `Axis.Labeler` форматирует тики как `dd.MM HH:mm` (`UnitWidth`/`MinStep` = 1 мин); пустое состояние при отсутствии истории.
+- Lifetime VM — Transient; scoped `IRunRepository`/`TbhStatsDbContext` через `IServiceScopeFactory`; обновления UI маршалятся через `DispatcherQueue` (паттерн `CompareViewModel`).
 
 ---
 

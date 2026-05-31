@@ -80,4 +80,36 @@ public sealed class RunRepository : IRunRepository
         _db.MetricSamples.Add(sample);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Удаляет метрические сэмплы этапа <paramref name="stageId"/> с <c>TakenAtUtc &lt; olderThanUtc</c>
+    /// (строго раньше cutoff; сэмпл ровно на границе остаётся).
+    /// Удаление двухшаговое:
+    ///   1. Bulk-DELETE зависимых <see cref="MetricSampleChest"/> тех же сэмплов
+    ///      (SQLite без PRAGMA foreign_keys=ON не каскадирует FK при ExecuteDeleteAsync).
+    ///   2. Bulk-DELETE самих <see cref="MetricSample"/>.
+    /// Возвращает число удалённых родительских строк (MetricSample).
+    /// <see cref="StageAggregate"/> и <see cref="StageRun"/> не затрагиваются.
+    /// </remarks>
+    public async Task<int> PruneSamplesAsync(int stageId, DateTime olderThanUtc, CancellationToken ct)
+    {
+        // Шаг 1: удалить зависимые MetricSampleChest для затрагиваемых сэмплов.
+        // ExecuteDeleteAsync работает с bulk-SQL и не загружает граф EF,
+        // поэтому FK-каскад SQLite (PRAGMA foreign_keys) не срабатывает автоматически.
+        // Удаляем детей явно перед родителями, чтобы избежать осиротевших строк.
+        await _db.MetricSampleChests
+            .Where(c => _db.MetricSamples
+                .Where(s => s.StageId == stageId && s.TakenAtUtc < olderThanUtc)
+                .Select(s => s.Id)
+                .Contains(c.MetricSampleId))
+            .ExecuteDeleteAsync(ct)
+            .ConfigureAwait(false);
+
+        // Шаг 2: удалить сами сэмплы и вернуть их количество.
+        return await _db.MetricSamples
+            .Where(s => s.StageId == stageId && s.TakenAtUtc < olderThanUtc)
+            .ExecuteDeleteAsync(ct)
+            .ConfigureAwait(false);
+    }
 }

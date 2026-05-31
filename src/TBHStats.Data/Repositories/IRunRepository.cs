@@ -26,4 +26,10 @@ public interface IRunRepository
     /// Сохраняет метрический сэмпл. Принимает только записи с <see cref="MetricSample.IsReliable"/> == true (FR-005a).
     /// </summary>
     Task AppendSampleAsync(MetricSample sample, CancellationToken ct);
+
+    /// <summary>
+    /// Удаляет (прореживает) метрические сэмплы этапа, снятые СТРОГО раньше <paramref name="olderThanUtc"/> (US3, ретенция).
+    /// Агрегаты (StageAggregate) НЕ затрагиваются. Возвращает число удалённых сэмплов.
+    /// </summary>
+    Task<int> PruneSamplesAsync(int stageId, DateTime olderThanUtc, CancellationToken ct);
 }

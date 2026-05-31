@@ -223,6 +223,10 @@
             Margin="0,8,0,0">
 
             <Button
+                Content="Графики"
+                Click="OnChartsClicked" />
+
+            <Button
                 Content="Сравнение"
                 Click="OnCompareClicked" />
 

@@ -5,12 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased]
 
 ## [0.1.3] - 2026-05-31
 
 ### Added
 - **US2**: история этапов и recency-aware выбор оптимального для фарма (Phase 4, T032–T042) (b54e008)
+  - **Уточнение механики**: добыча зависит не только от этапа, но и от силы отряда (уровни/предметы/руны; сложность — уже измерение этапа). Усреднение по всей истории смешивает забеги разной силы → введена **recency-aware** агрегация: `StageAggregate` хранит И all-time, И «свежее окно» (последние `OptimizationProfile.RecentWindowSize` non-partial забегов, дефолт 10); ранжирование/рекомендация — по свежему окну (текущая сила), all-time — справочно. Прокси силы — выбранный герой (`HeroSnapshot`); предметы/руны/герои 2–3 в v1 не считываются (задокументировано в spec.md Assumptions, FR-008/009).
+  - **Core/Optimization**: `StageAggregateCalculator` — чистый расчёт агрегата (all-time + окно + power-context + темпы сундуков); `OptimizationService` — recency-aware ранжирование/рекомендация по `OptimizationMetric` + `AggregationScope` (Recent/AllTime, tie-break recent best); `StageRanking`, `StagePowerContext`.
+  - **Core/Models**: recent/power-поля `StageAggregate`, `StageAggregateChestRate.RecentRatePerHour`, `OptimizationProfile.RecentWindowSize`/`Scope`, enum `AggregationScope`.
+  - **Capture**: `StageCompletionDetector` — детерминированная машина состояний InProgress/BossEngaged над `RawObservation` для сегментации забегов (FR-002).
+  - **Data**: полная реализация `IRunRepository` (AddRun/GetRuns/GetSamples/AppendSample); recency-aware `StageAggregateRepository.RecomputeForStageAsync(stageId, recentWindowSize)` через калькулятор (upsert агрегата+ChestRates); аддитивная EF-миграция `AddRecencyAwareAggregation` (только AddColumn — история не теряется, FR-013).
+  - **App/Services**: `RunRecorder` — сборка/запись `StageRun` (дельты золота/опыта с компенсацией level-up, накопление сундуков, контекст силы `HeroSnapshot`, флаг partial) → AddRun → Recompute; интеграция в петлю оркестратора; `OptimizationProfileService` — переключение метрики/окна/scope с персистентностью.
+  - **App/UI**: `CompareView` + `CompareViewModel`/`CompareStageRow` — экран сравнения этапов (ранжирование по метрике, ★-отметка рекомендованного, контекст силы, пометка «⚠ устар.» при низкой силе относительно текущей, переключатели цели и Recent/All-time, пустое состояние; FR-017/019); кнопка «Сравнение» в виджете.
+
+### Tested
+- 53 новых теста на реальных объектах/SQLite, без моков: `OptimizationServiceTests` (18), `StageAggregateTests` (18, калькулятор), `RunRecordingTests` (10), `StageAggregateRecomputeTests` (7). Итого Core 151/151, Data 44/44 PASS. Сборка решения — 0 ошибок, 0 предупреждений.
+
+### Notes
+- US1 не затронута; observe-only продукта сохранён. `RunRecorder`/`StageCompletionDetector` механически готовы, но триггер завершения этапа зависит от визуальных полей MainZone (`StageProgress`/`BossPresent`/`StageTimeSeconds`), калибруемых на фикстурах/живой игре (T049/T051) — до этого история забегов не наполняется.
 
 ## [0.1.2] - 2026-05-31
 

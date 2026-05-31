@@ -19,7 +19,7 @@
   - health-воркеры → `~/.claude/agents/health/workers/*.md` (bug-hunter, bug-fixer, dead-code-hunter, …);
   - health-inline скиллы → `~/.claude/skills/*-health-inline/` (cleanup/deps/reuse/security);
   - **проектные .NET-агенты TBHStats** → `~/.claude/agents/development/workers/{dotnet-winui-developer,efcore-sqlite-specialist,windows-capture-ocr-specialist}.md` и `~/.claude/agents/testing/workers/{dotnet-test-writer,dotnet-uiautomation-specialist}.md` (созданы в Phase 0 через `/create`).
-- Боевые **commands** резолвятся из `~/.claude/commands/` (`/health-*`, `/record-metrics`, `/health-metrics`, `/push`, `/speckit.*`, …) + project `.claude/commands/` (только `/release` — проектный .NET-релиз TBHStats; bash-`/push` из kit для .NET НЕ применяется, релиз идёт через `/release`/`scripts/release.ps1`).
+- Боевые **commands** резолвятся из `~/.claude/commands/` (`/health-*`, `/record-metrics`, `/health-metrics`, `/speckit.*`, …) + project `.claude/commands/`. Project `.claude/commands/` содержит `release.md`, `push.md` (override kit-`/push`) и `commit.md` (override user-`/commit`) — все ведут на `scripts/release.ps1`; kit-bash `release.sh` для TBHStats НЕ применяется (его в проекте нет). Цель override-ов `push.md`/`commit.md` — перехватить вызовы `/push` и `/commit` по голому имени, чтобы релиз шёл через .NET-путь, а не подхватывался kit-bash `release.sh`.
 - Боевые **rules** — project `.claude/rules/` + `~/.claude/rules/`.
 - Боевой **speckit** (spec/plan/tasks/constitution, шаблоны, скрипты) — **root `.specify/`** (НЕ kit). Изменение требований/принципов — через `/speckit.*` + Amendment Procedure конституции, а не ручной правкой.
 - `claude-code-orchestrator-kit/{.claude,.specify,…}` — **мёртвый upstream-референс** (vendored, gitignored, ведёт свою историю в отдельном репо). В рантайм-резолв НЕ входит; версии устарели относительно боевых `~/.claude/` и root `.specify/`.
@@ -34,7 +34,8 @@
 - ❌ Искать `dotnet-winui-developer` в project `.claude/agents/` — его там нет; боевой агент в `~/.claude/agents/development/workers/`.
 - ❌ Править `claude-code-orchestrator-kit/.specify/memory/constitution.md` — боевая конституция в **root** `.specify/memory/constitution.md`.
 - ❌ Делать .NET-релиз TBHStats через kit-`/push` (bash, conventional-commits npm) — для .NET используется `/release` (`scripts/release.ps1`, bump `<Version>` в `Directory.Build.props`).
+- ❌ Запускать `bash .claude/scripts/release.sh` или kit-`/push` для TBHStats — для .NET релиз только через `scripts/release.ps1` (обёртки: project `/commit`/`/push`/`/release`).
 
 ## TL;DR
 
-skills/agents → только `~/.claude/` (project-level в TBHStats нет). commands → `~/.claude/` + project `.claude/commands/` (только `/release`). rules → project `.claude/rules/` + `~/.claude/`. speckit → **root `.specify/`**. `claude-code-orchestrator-kit/` — полностью мёртвый gitignored-дубль, не трогать и не цитировать; из него при работе над TBHStats не используется ничего.
+skills/agents → только `~/.claude/` (project-level в TBHStats нет). commands → `~/.claude/` + project `.claude/commands/` = `/release` + override `/push` + override `/commit` (все → `release.ps1`). rules → project `.claude/rules/` + `~/.claude/`. speckit → **root `.specify/`**. `claude-code-orchestrator-kit/` — полностью мёртвый gitignored-дубль, не трогать и не цитировать; из него при работе над TBHStats не используется ничего.

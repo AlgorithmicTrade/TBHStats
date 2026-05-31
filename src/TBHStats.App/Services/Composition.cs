@@ -104,6 +104,10 @@ public static class Composition
         // IServiceScopeFactory самостоятельно внутри LoadAsync.
         services.AddTransient<CompareViewModel>();
 
+        // ChartsViewModel: transient; scoped-зависимости через IServiceScopeFactory.
+        // Создаётся на UI-потоке (для DispatcherQueue).
+        services.AddTransient<ChartsViewModel>();
+
         // CalibrationViewModel: transient; зависит от scoped ISettingsRepository.
         // Регистрируем через фабрику с ScopedSettingsRepositoryProxy, чтобы не нарушать lifetime.
         services.AddTransient<CalibrationViewModel>(sp =>

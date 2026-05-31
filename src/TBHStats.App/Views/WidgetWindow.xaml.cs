@@ -129,6 +129,14 @@ public sealed partial class WidgetWindow : Window
         }
     }
 
+    // ─── Кнопка «Графики» ───────────────────────────────────────────────────
+
+    private void OnChartsClicked(object sender, RoutedEventArgs e)
+    {
+        ChartsHostWindow chartsWindow = new();
+        chartsWindow.Activate();
+    }
+
     // ─── Кнопка «Сравнение» ─────────────────────────────────────────────────
 
     private void OnCompareClicked(object sender, RoutedEventArgs e)

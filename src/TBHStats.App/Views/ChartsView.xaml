@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="TBHStats_App.Views.ChartsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:lvc="using:LiveChartsCore.SkiaSharpView.WinUI"
+    xmlns:conv="using:TBHStats_App.Views.Converters"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <conv:BoolNegationConverter     x:Key="BoolNegationConverter" />
+        <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </Page.Resources>
+
+    <Grid RowSpacing="8" Padding="12">
+        <Grid.RowDefinitions>
+            <!-- Строка 0: заголовок -->
+            <RowDefinition Height="Auto" />
+            <!-- Строка 1: панель выбора этапа + статус -->
+            <RowDefinition Height="Auto" />
+            <!-- Строка 2: пустое состояние -->
+            <RowDefinition Height="Auto" />
+            <!-- Строка 3: контейнер графиков -->
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ── Строка 0: Заголовок ──────────────────────────────────────────── -->
+        <TextBlock
+            Grid.Row="0"
+            Text="Тренды по этапу"
+            Style="{StaticResource TitleTextBlockStyle}" />
+
+        <!-- ── Строка 1: Панель выбора этапа ───────────────────────────────── -->
+        <Grid Grid.Row="1" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock
+                Grid.Column="0"
+                Text="Этап"
+                Style="{StaticResource BodyTextBlockStyle}"
+                VerticalAlignment="Center" />
+
+            <ComboBox
+                Grid.Column="1"
+                ItemsSource="{Binding StageOptions}"
+                SelectedItem="{Binding SelectedStage, Mode=TwoWay}"
+                DisplayMemberPath="Label"
+                MinWidth="180"
+                VerticalAlignment="Center" />
+
+            <TextBlock
+                Grid.Column="3"
+                Text="{Binding StatusText}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- ── Строка 2: Пустое состояние ──────────────────────────────────── -->
+        <TextBlock
+            Grid.Row="2"
+            Text="Нет данных — сыграйте на этапах, чтобы накопить историю"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            TextWrapping="Wrap"
+            TextAlignment="Center"
+            Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+            Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+        <!-- ── Строка 3: Контейнер графиков (скрыт при IsEmpty) ────────────── -->
+        <ScrollViewer
+            Grid.Row="3"
+            VerticalScrollBarVisibility="Auto"
+            Visibility="{Binding IsEmpty, Converter={StaticResource BoolNegationConverter}, ConverterParameter=Visibility}">
+
+            <StackPanel Spacing="16">
+
+                <!-- ── График 1: Золото/ч ──────────────────────────────────── -->
+                <StackPanel Spacing="4">
+                    <TextBlock
+                        Text="Золото/ч"
+                        Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <lvc:CartesianChart
+                        Series="{Binding GoldSeries}"
+                        XAxes="{Binding XAxes}"
+                        YAxes="{Binding GoldYAxes}"
+                        TooltipPosition="Top"
+                        MinHeight="160" />
+                </StackPanel>
+
+                <!-- ── График 2: Опыт/ч ────────────────────────────────────── -->
+                <StackPanel Spacing="4">
+                    <TextBlock
+                        Text="Опыт/ч"
+                        Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <lvc:CartesianChart
+                        Series="{Binding XpSeries}"
+                        XAxes="{Binding XAxes}"
+                        YAxes="{Binding XpYAxes}"
+                        TooltipPosition="Top"
+                        MinHeight="160" />
+                </StackPanel>
+
+                <!-- ── График 3: Время прохождения ────────────────────────── -->
+                <StackPanel Spacing="4">
+                    <TextBlock
+                        Text="Время прохождения, мин"
+                        Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <lvc:CartesianChart
+                        Series="{Binding DurationSeries}"
+                        XAxes="{Binding XAxes}"
+                        YAxes="{Binding DurationYAxes}"
+                        TooltipPosition="Top"
+                        MinHeight="160" />
+                </StackPanel>
+
+            </StackPanel>
+        </ScrollViewer>
+
+    </Grid>
+</Page>

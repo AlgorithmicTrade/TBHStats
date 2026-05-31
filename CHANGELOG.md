@@ -5,12 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased]
 
 ## [0.1.4] - 2026-05-31
 
 ### Added
 - **US3**: визуализация трендов по этапу графиками + ретенция сэмплов (Phase 5, T043–T046) (14d921c)
+  - **App/UI**: `ChartsView` + `ChartsHostWindow` + `ChartsViewModel`/`ChartsStageOption` — экран графиков трендов на LiveCharts2: три `CartesianChart` (золото/час, опыт/час, время прохождения) по выбранному этапу во времени, интерактивные тултипы по точкам, `ComboBox` выбора этапа, пустое состояние; кнопка «Графики» в виджете. Источник точек — реальные завершённые (non-partial) `StageRun` (одна точка на забег, x=`CompletedAtUtc`).
+  - **Data**: ретенция/прореживание метрических сэмплов `IRunRepository.PruneSamplesAsync(stageId, olderThanUtc)` — двухшаговый bulk `ExecuteDeleteAsync` (зависимые `MetricSampleChest` → `MetricSample`; SQLite без `PRAGMA foreign_keys=ON` не каскадирует FK при bulk-delete), строгий cutoff (`TakenAtUtc < olderThanUtc`); `StageRun`/`StageAggregate` не затрагиваются (агрегаты сохраняются).
+  - **Граница слоёв**: домен/данные без UI/WinRT (задел под MAUI), графики только в `TBHStats.App`.
+
+### Tested
+- 11 новых тестов на реальном временном SQLite, без моков: `GetSamplesTests` (6 — диапазон, граничная включительность, фильтр по этапу, пустой, сундуки через Include, переживание перезапуска), `PruneSamplesTests` (5 — удаление старше cutoff, изоляция этапа, идемпотентность, сохранность `StageRun`/агрегатов, удаление ненадёжных). Итого Core 151/151, Data 55/55 PASS. Сборка решения — 0 ошибок, 0 предупреждений.
+
+### Notes
+- Все три пользовательские истории (US1/US2/US3) теперь независимо функциональны.
+- Тренды строятся по `StageRun` (даёт золото/ч, опыт/ч и время напрямую); `GetSamplesAsync`/`PruneSamplesAsync` (MetricSample) — задел под тонкие live-тренды и контролируемое прореживание истории сэмплов.
 
 ## [0.1.3] - 2026-05-31
 

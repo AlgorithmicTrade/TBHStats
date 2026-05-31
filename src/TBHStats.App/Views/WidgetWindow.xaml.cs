@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Input;
 using TBHStats.App.ViewModels;
 using TBHStats.Core.Models;
 using TBHStats.Data.Repositories;
@@ -131,26 +132,52 @@ public sealed partial class WidgetWindow : Window
 
     // ─── Кнопка «Графики» ───────────────────────────────────────────────────
 
-    private void OnChartsClicked(object sender, RoutedEventArgs e)
+    private void OnChartsClicked(object sender, RoutedEventArgs e) => OpenChartsWindow();
+
+    // ─── Кнопка «Сравнение» ─────────────────────────────────────────────────
+
+    private void OnCompareClicked(object sender, RoutedEventArgs e) => OpenCompareWindow();
+
+    // ─── Кнопка «Калибровка» ────────────────────────────────────────────────
+
+    private void OnCalibrationClicked(object sender, RoutedEventArgs e) => OpenCalibrationWindow();
+
+    // ─── KeyboardAccelerator-обработчики (Alt+G / Alt+C / Alt+K) ────────────
+
+    private void OnChartsAcceleratorInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        OpenChartsWindow();
+        args.Handled = true;
+    }
+
+    private void OnCompareAcceleratorInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        OpenCompareWindow();
+        args.Handled = true;
+    }
+
+    private void OnCalibrationAcceleratorInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        OpenCalibrationWindow();
+        args.Handled = true;
+    }
+
+    // ─── Вспомогательные методы открытия окон ───────────────────────────────
+
+    private static void OpenChartsWindow()
     {
         ChartsHostWindow chartsWindow = new();
         chartsWindow.Activate();
     }
 
-    // ─── Кнопка «Сравнение» ─────────────────────────────────────────────────
-
-    private void OnCompareClicked(object sender, RoutedEventArgs e)
+    private static void OpenCompareWindow()
     {
-        // Открываем CompareView в отдельном хост-окне.
         CompareHostWindow compareWindow = new();
         compareWindow.Activate();
     }
 
-    // ─── Кнопка «Калибровка» ────────────────────────────────────────────────
-
-    private void OnCalibrationClicked(object sender, RoutedEventArgs e)
+    private static void OpenCalibrationWindow()
     {
-        // Открываем CalibrationView в отдельном хост-окне.
         CalibrationHostWindow calibWindow = new();
         calibWindow.Activate();
     }

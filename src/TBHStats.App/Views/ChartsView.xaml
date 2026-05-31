@@ -42,17 +42,24 @@
             </Grid.ColumnDefinitions>
 
             <TextBlock
+                x:Name="StageLabel"
                 Grid.Column="0"
                 Text="Этап"
                 Style="{StaticResource BodyTextBlockStyle}"
                 VerticalAlignment="Center" />
 
             <ComboBox
+                x:Name="StageComboBox"
                 Grid.Column="1"
+                AutomationProperties.Name="Выбор этапа для отображения графиков"
+                AutomationProperties.AutomationId="StageComboBox"
+                AutomationProperties.LabeledBy="{Binding ElementName=StageLabel}"
                 ItemsSource="{Binding StageOptions}"
                 SelectedItem="{Binding SelectedStage, Mode=TwoWay}"
                 DisplayMemberPath="Label"
                 MinWidth="180"
+                IsTabStop="True"
+                TabIndex="0"
                 VerticalAlignment="Center" />
 
             <TextBlock
@@ -85,9 +92,12 @@
                 <!-- ── График 1: Золото/ч ──────────────────────────────────── -->
                 <StackPanel Spacing="4">
                     <TextBlock
+                        x:Name="GoldChartTitle"
                         Text="Золото/ч"
                         Style="{StaticResource BodyStrongTextBlockStyle}" />
                     <lvc:CartesianChart
+                        AutomationProperties.Name="График золото в час по забегам"
+                        AutomationProperties.AutomationId="GoldChart"
                         Series="{Binding GoldSeries}"
                         XAxes="{Binding XAxes}"
                         YAxes="{Binding GoldYAxes}"
@@ -98,9 +108,12 @@
                 <!-- ── График 2: Опыт/ч ────────────────────────────────────── -->
                 <StackPanel Spacing="4">
                     <TextBlock
+                        x:Name="XpChartTitle"
                         Text="Опыт/ч"
                         Style="{StaticResource BodyStrongTextBlockStyle}" />
                     <lvc:CartesianChart
+                        AutomationProperties.Name="График опыт в час по забегам"
+                        AutomationProperties.AutomationId="XpChart"
                         Series="{Binding XpSeries}"
                         XAxes="{Binding XAxes}"
                         YAxes="{Binding XpYAxes}"
@@ -111,9 +124,12 @@
                 <!-- ── График 3: Время прохождения ────────────────────────── -->
                 <StackPanel Spacing="4">
                     <TextBlock
+                        x:Name="DurationChartTitle"
                         Text="Время прохождения, мин"
                         Style="{StaticResource BodyStrongTextBlockStyle}" />
                     <lvc:CartesianChart
+                        AutomationProperties.Name="График время прохождения этапа в минутах"
+                        AutomationProperties.AutomationId="DurationChart"
                         Series="{Binding DurationSeries}"
                         XAxes="{Binding XAxes}"
                         YAxes="{Binding DurationYAxes}"

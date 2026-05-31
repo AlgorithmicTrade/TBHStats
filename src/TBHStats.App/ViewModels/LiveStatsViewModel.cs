@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Dispatching;
 using TBHStats.App.Services;
+using TBHStats.Core.Mechanics;
 using TBHStats.Core.Models;
 
 namespace TBHStats.App.ViewModels;
@@ -13,6 +14,7 @@ namespace TBHStats.App.ViewModels;
 public sealed partial class LiveStatsViewModel : ObservableObject
 {
     private readonly IStatsOrchestrator _orchestrator;
+    private readonly IGameMechanics _gameMechanics;
     private readonly DispatcherQueue? _dispatcher;
 
     // ──────────────────────────────────────────────────────────────
@@ -119,9 +121,11 @@ public sealed partial class LiveStatsViewModel : ObservableObject
     /// Должен создаваться на UI-потоке, чтобы корректно захватить <see cref="DispatcherQueue"/>.
     /// </summary>
     /// <param name="orchestrator">Фоновый оркестратор — источник снимков живой статистики.</param>
-    public LiveStatsViewModel(IStatsOrchestrator orchestrator)
+    /// <param name="gameMechanics">Конфиг механик игры — используется для имён типов сундуков в подписях (A11y §XI).</param>
+    public LiveStatsViewModel(IStatsOrchestrator orchestrator, IGameMechanics gameMechanics)
     {
         _orchestrator = orchestrator;
+        _gameMechanics = gameMechanics;
 
         // Захватываем DispatcherQueue текущего (UI) потока.
         // Если конструктор вызван не на UI-потоке (тесты, headless) — dispatcher будет null,
@@ -223,15 +227,24 @@ public sealed partial class LiveStatsViewModel : ObservableObject
     private static string FormatLong(long value) => value.ToString("N0");
 
     /// <summary>
-    /// Строит строку вида «1: 12/ч, 2: 3/ч» из словаря ChestType.Id → сундуков/час.
+    /// Строит строку вида «Базовый: 12/ч, Редкий: 3/ч» из словаря ChestType.Id → сундуков/час.
+    /// Использует <see cref="IGameMechanics"/> для получения <see cref="ChestType.DisplayName"/>
+    /// вместо числового Id — тип сундука различается текстом, не только цветом (A11y §XI).
     /// Возвращает «—» если словарь пуст.
     /// </summary>
-    private static string BuildChestsText(IReadOnlyDictionary<int, double> byType)
+    private string BuildChestsText(IReadOnlyDictionary<int, double> byType)
     {
         if (byType.Count == 0) return "—";
 
+        GameMechanicsConfig cfg = _gameMechanics.Current;
+
         return string.Join(", ", byType
             .OrderBy(kv => kv.Key)
-            .Select(kv => $"{kv.Key}: {kv.Value:N1}/ч"));
+            .Select(kv =>
+            {
+                ChestType? chestType = cfg.ChestTypes.FirstOrDefault(ct => ct.Id == kv.Key);
+                string label = chestType is not null ? chestType.DisplayName : kv.Key.ToString();
+                return $"{label}: {kv.Value:N1}/ч";
+            }));
     }
 }

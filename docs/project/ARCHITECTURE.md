@@ -2,7 +2,7 @@
 
 **Проект**: TBHStats — десктоп-помощник по статистике для игры Task Bar Hero
 **Платформа**: Windows 11 (x64/arm64), один локальный пользователь
-**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010/T022/T023/T024/T025/T026/T028/T035–T042 US2 recency-aware; T043–T046 US3 тренды/ретенция)
+**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010/T022/T023/T024/T025/T026/T028/T035–T042 US2 recency-aware; T043–T046 US3 тренды/ретенция; T047 обработка ошибок и логирование; T048 конфигурация поставки MSIX/unpackaged; T053 accessibility-проход)
 **Спецификация-источник**: `specs/001-tbh-stats-helper/` (plan, research, data-model, contracts) · конституция `v2.2.0`
 
 > TBHStats наблюдает за окном запущенной игры, **визуально** считывает игровые показатели (золото, опыт, время этапа, класс/уровень/урон героя, текущий этап, сундуки по типам), вычисляет темпы (золото/час, опыт/час, сундуки/час), накапливает историю по 60 этапам (3 акта × 2 сложности × 10) и рекомендует оптимальный этап для фарма. Режим строго **observe-only**: никаких записей в память игры и инъекций ввода.
@@ -236,6 +236,7 @@ await DatabaseInitializer.InitializeAsync(db, ct);
 - Кнопка «Калибровка» открывает `CalibrationHostWindow` — отдельное окно-хост с Frame.Navigate(`CalibrationView`).
 - Кнопка «Сравнение» открывает `CompareHostWindow` — окно-хост с Frame.Navigate(`CompareView`) (US2, T041).
 - Кнопка «Графики» открывает `ChartsHostWindow` — окно-хост с Frame.Navigate(`ChartsView`) (US3, T045).
+- **Keyboard accelerators (T053 A11y)**: Alt+G — графики, Alt+C — сравнение, Alt+K — калибровка. Все кнопки имеют `AutomationProperties.Name` и `AutomationProperties.AutomationId`.
 
 Визуальные состояния (T031):
 - `IsGameFound == false` → красная плашка «Игра не найдена».
@@ -249,6 +250,7 @@ await DatabaseInitializer.InitializeAsync(db, ct);
 - Рекомендованный этап помечен «★»; «устаревшие» забеги (сила окна заметно ниже текущей силы отряда из `IStatsOrchestrator.Current`) — пометкой «⚠ устар.» (текст, не только цвет — A11y).
 - Контекст силы окна (диапазон уровня/урона выбранного героя) показывается в строке (`PowerText`).
 - **Recency-aware (уточнение 2026-05-31)**: добыча зависит от растущей силы отряда (уровни/предметы/руны; сложность — измерение этапа) → рекомендация по умолчанию по свежему окну (последние `OptimizationProfile.RecentWindowSize` non-partial забегов), не по всей истории. Прокси силы — выбранный герой (`HeroSnapshot`); руны/предметы/герои 2–3 в v1 не считываются (см. spec.md Assumptions). Переключение метрики/scope — через `OptimizationProfileService` (T040), персистится в `OptimizationProfile`.
+- **A11y (T053)**: RadioButton «Золото/час» / «Опыт/час» и «Свежее окно» / «Вся история» имеют `AutomationProperties.Name` и `AutomationProperties.AutomationId`; ListView таблицы этапов аннотирован.
 
 ### Графики
 
@@ -267,6 +269,18 @@ await DatabaseInitializer.InitializeAsync(db, ct);
 - `ComboBox` выбора этапа: `StageOptions` (только этапы с историей; метка «1-5 Nightmare» через тот же join Stage+Act+Difficulty, что и `CompareViewModel`); смена `SelectedStage` перестраивает серии (partial `OnSelectedStageChanged` → fire-and-forget `RebuildSeriesAsync`).
 - Ось X — `Axis.Labeler` форматирует тики как `dd.MM HH:mm` (`UnitWidth`/`MinStep` = 1 мин); пустое состояние при отсутствии истории.
 - Lifetime VM — Transient; scoped `IRunRepository`/`TbhStatsDbContext` через `IServiceScopeFactory`; обновления UI маршалятся через `DispatcherQueue` (паттерн `CompareViewModel`).
+- **A11y (T053)**: ComboBox выбора этапа и все три CartesianChart имеют `AutomationProperties.Name` и `AutomationProperties.AutomationId`.
+
+### Доступность (Accessibility, T053 — §XI конституции)
+
+Реализован accessibility-проход по UI (RECOMMENDED):
+
+- **Keyboard operability**: кнопки «Графики» / «Сравнение» / «Калибровка» в `WidgetWindow` имеют `AutomationProperties.Name`, `AutomationProperties.AutomationId`, `IsTabStop=True`, разумные `TabIndex`. Keyboard accelerators: Alt+G, Alt+C, Alt+K; обработчики в code-behind через `KeyboardAcceleratorInvokedEventArgs`. RadioButtons в `CompareView` (метрика, scope) аннотированы и имеют `TabIndex`.
+- **Подписи сундуков (не только цвет)**: `LiveStatsViewModel.BuildChestsText` теперь принимает `IGameMechanics` и использует `ChestType.DisplayName` («Базовый», «Редкий», «Легендарный») вместо числового Id — тип сундука различается текстом, не только цветом (A11y §XI + конституция «Do not rely on colour alone»).
+- **ThemeResource**: все цвета в XAML используют `{ThemeResource ...}` (системные кисти); жёстко заданных `#RRGGBB` нет — виджет корректен в Light/Dark теме.
+- **CalibrationView**: все интерактивные элементы (Button, ComboBox, NumberBox, TextBox) аннотированы `AutomationProperties.Name`, `AutomationProperties.AutomationId`, `AutomationProperties.LabeledBy` и `TabIndex`.
+- **ChartsView**: ComboBox этапа и CartesianChart аннотированы; статус-текст с `{ThemeResource SystemControlForegroundBaseMediumBrush}`.
+- Реальная визуальная проверка (скринридер Narrator, Accessibility Insights for Windows, High Contrast) требует запущенного приложения (T051).
 
 ---
 
@@ -360,6 +374,12 @@ tests/
 8. Исключения захвата/OCR → `logger.LogWarning` + `PublishStaleSnapshot`, без броска наружу. `using (frame)` — `CapturedFrame.Dispose()` гарантирован.
 9. `Task.Delay(pollIntervalMs, ct)` — период петли.
 
+**Обработка ошибок (T047, ADR-016):**
+- **«Ожидание вместо throw»** — инвариант всего пайплайна захвата: временная недоступность (свёрнутое окно, OCR-недоступность, пустой ROI) возвращает `null`/пустое значение + логирование, но не бросает исключение вверх по стеку. Исключения бросаются только при нарушении инвариантов аргументов (`ArgumentNullException`, `ArgumentOutOfRangeException`).
+- **Структурные шаблоны**: все вызовы `ILogger` используют именованные плейсхолдеры (`{FieldName}`), а не интерполяцию `$"..."`.
+- **Уровни**: `Debug` — диагностика/частое (детекция вкладки в норме); `Information` — жизненный цикл (старт/стоп петли, успешная запись забега, смена профиля); `Warning` — восстановимая деградация (ошибка кадра, ошибка настроек, неизвестный класс героя); `Error` — невосстановимый сбой на старте (инит БД, старт оркестратора).
+- **PII в логах**: путь к файлу БД и лог-директории **не логируется** на уровнях Info/Warning — только через `Debug` (или не логируется вовсе). Сырые OCR-строки не попадают в лог выше `Debug`.
+
 **Реализация (T026)**:
 - `LiveStatsSnapshot` (sealed record) — `src/TBHStats.App/Services/LiveStatsSnapshot.cs`: поля `CaptureState State`, `LiveRates Rates`, `long? Gold`, `int? HeroLevel`, `string? HeroClass`, `long? HeroDamage`, `StageRef? Stage`, `DateTime? LastReliableUtc`, `bool IsStale`. Статик `Empty` — начальное значение.
 - `IStatsOrchestrator` — `src/TBHStats.App/Services/IStatsOrchestrator.cs`: `LiveStatsSnapshot Current`, `event EventHandler<LiveStatsSnapshot>? SnapshotUpdated`, `Task StartAsync(CancellationToken)`, `Task StopAsync()`.
@@ -415,7 +435,7 @@ Capturing ──(низкая уверенность OCR)───────�
   - Точные пороги уточняются эмпирически на фикстурах (T049).
 
 **`TBHStats.Core`**
-- `IValueParser` / `ValueParser` — сокращённые числа K/M/B/T, время этапа («SS»/«MM:SS»/«H:MM:SS»), идентификатор этапа (R4). Реализован в `TBHStats.Core/Parsing/`; без статического состояния, `CultureInfo.InvariantCulture`, `decimal`-арифметика для точных множителей.
+- `IValueParser` / `ValueParser` — сокращённые числа K/M/B/T **и полноразмерные числа с пробелом-разделителем разрядов** («54 678», «2 285 394» — реальный формат TBH, verified T049, нормализация `\p{Zs}` между цифрами; см. GAME-FACTS §12), время этапа («SS»/«MM:SS»/«H:MM:SS»), идентификатор этапа (R4). Реализован в `TBHStats.Core/Parsing/`; без статического состояния, `CultureInfo.InvariantCulture`, `decimal`-арифметика для точных множителей.
 - `IMetricsCalculator` — темпы по надёжным интервалам (FR-006, FR-005a).
 - `IStageAggregateCalculator` / `StageAggregateCalculator` — **чистая** доменная функция (T038): из забегов этапа считает `StageAggregate` (all-time + свежее окно последних N non-partial по `CompletedAtUtc` + power-context из `HeroSnapshot` + темпы сундуков). Не ставит `UpdatedAtUtc` (это делает репозиторий).
 - `IOptimizationService` — **recency-aware** ранжирование и рекомендация этапа по `OptimizationMetric` + `AggregationScope` (дефолт `Recent` = при текущей силе; `AllTime` — справка); tie-break recent best (FR-008/009/017/019).
@@ -474,6 +494,55 @@ Capturing ──(низкая уверенность OCR)───────�
 - **Предпочтительно MSIX** (packaged) — надёжный доступ к WinRT (WGC/OCR), идентичность приложения, автообновления.
 - **Unpackaged / self-contained** (один `.exe`) — опционально для «portable»-сборки; требует установленного .NET 8 desktop runtime и тщательной проверки WinRT-вызовов.
 
+### Режимы поставки (T048)
+
+Конфигурация в `src/TBHStats.App/TBHStats.App.csproj` (ключевые свойства):
+
+| Свойство | Packaged (MSIX) | Unpackaged (portable) |
+|----------|----------------|----------------------|
+| `WindowsPackageType` | `MSIX` | `None` (default) |
+| `EnableMsixTooling` | `true` | `true` |
+| `AppxPackageSigningEnabled` | `false` (sideload/dev) | — |
+| Bootstrap Windows App SDK | автоматически (пакет) | не требуется при наличии WindowsAppSDK runtime на машине |
+
+**`Package.appxmanifest`** (`src/TBHStats.App/Package.appxmanifest`) — MSIX identity manifest:
+- `Identity.Name`: `AlgorithmicTrade.TBHStats`
+- `MinVersion`: `10.0.19041.0` (синхронизировано с `TargetPlatformMinVersion` csproj)
+- `Capabilities`: только `runFullTrust` (P/Invoke, WGC, D3D11, Windows.Media.Ocr)
+- Сетевые capability (`internetClient` и пр.) **отсутствуют** (FR-012)
+
+#### Команды сборки
+
+```powershell
+# Обычная сборка / разработка (unpackaged, WindowsPackageType=None — default):
+dotnet restore TBHStats.sln
+dotnet build TBHStats.sln -c Debug
+dotnet run --project src/TBHStats.App
+
+# Unpackaged publish (portable, self-contained, win-x64):
+dotnet publish src/TBHStats.App/TBHStats.App.csproj `
+  -c Release -r win-x64 `
+  -p:WindowsPackageType=None `
+  -p:SelfContained=true
+# Артефакты: src/TBHStats.App/bin/Release/net8.0-windows10.0.22621.0/win-x64/publish/
+
+# Packaged MSIX (требует MSBuild / Visual Studio, НЕ dotnet-CLI из-за WinAppSdkValidateAppxManifestItems):
+# MSBuild src/TBHStats.App/TBHStats.App.csproj `
+#   /p:Configuration=Release /p:Platform=x64 `
+#   /p:WindowsPackageType=MSIX /p:AppxPackageSigningEnabled=false `
+#   /p:GenerateAppxPackageOnBuild=true
+# Артефакты: src/TBHStats.App/bin/x64/Release/net8.0-windows10.0.22621.0/TBHStats.App_*.msix
+```
+
+**Ограничение CLI-упаковки**: `Microsoft.Windows.SDK.BuildTools.MSIX` задача `WinAppSdkValidateAppxManifestItems` при `WindowsPackageType=MSIX` падает в headless `dotnet` CLI окружении с `System.Security.Permissions` (MSBuild-хост не находит сборку .NET 8). Это известный баг BuildTools.MSIX 1.7.x. Для продуктового MSIX-пакета использовать Visual Studio 2022 ≥ 17.8 или MSBuild Desktop (не dotnet-CLI). Unpackaged-сборка и `dotnet build`/`dotnet run`/`dotnet test` работают без ограничений.
+
+#### WinRT-доступ в обоих режимах
+
+WinRT API (`Windows.Graphics.Capture`, `Windows.Media.Ocr`, `Windows.Graphics.Imaging`) доступны из `TBHStats.Capture` в обоих режимах при TFM `net8.0-windows10.0.22621.0` через CsWinRT-проекции (`Microsoft.Windows.SDK.NET.dll`, входит в `Microsoft.WindowsAppSDK`). Это подтверждено сборкой и тестами `TBHStats.Capture.Tests` (87 тестов pass) без packaged identity.
+
+- **Packaged**: `runFullTrust` в манифесте снимает ограничения на WinRT-API, связанные с идентичностью.
+- **Unpackaged**: CsWinRT проекции работают без identity, WGC/OCR доступны напрямую. Windows App SDK bootstrap (`WindowsAppSDK` runtime) уже установлен при наличии пакета `Microsoft.WindowsAppSDK` в проекте (Microsoft.Windows.SDK.BuildTools.WinApp обеспечивает `dotnet run` поддержку).
+
 **Последовательность запуска (T028)**:
 
 1. `App()` — `BuildHost()`: регистрация DI (Composition.AddTbhStatsServices).
@@ -481,7 +550,13 @@ Capturing ──(низкая уверенность OCR)───────�
 3. Асинхронно (`InitializeAsync`): `DatabaseInitializer.InitializeAsync(db)` (миграции + сидинг) → `IStatsOrchestrator.StartAsync(CancellationToken.None)`.
 4. При закрытии виджета — `IStatsOrchestrator.StopAsync()`.
 
-**Celевые показатели**: кадр + OCR одной ROI < ~150 мс; живые темпы видны ≤10 c после старта (SC-001); возобновление после перекрытия ≤5 c (SC-008); низкая idle-нагрузка CPU (захват по требованию, не непрерывный видеопоток).
+**Целевые показатели**: кадр + OCR одной ROI < ~150 мс; живые темпы видны ≤10 c после старта (SC-001); возобновление после перекрытия ≤5 c (SC-008); низкая idle-нагрузка CPU (захват по требованию, не непрерывный видеопоток).
+
+**Диагностика и логи (T047, ADR-016)**:
+- Логи приложения: `%LOCALAPPDATA%\TBHStats\logs\tbhstats-YYYY-MM-DD.log` (ротация по дате UTC).
+- Провайдер: лёгкий `FileLoggerProvider` (собственная реализация `ILoggerProvider`, `src/TBHStats.App/Services/Logging/`); без сетевых зависимостей (FR-012).
+- Минимальный уровень в файл: `Information`; уровень `Debug` — только в `Debug`-синк (разработка).
+- Путь к лог-директории не раскрывается на уровне Info/Warning во избежание PII (имя пользователя в пути).
 
 ---
 

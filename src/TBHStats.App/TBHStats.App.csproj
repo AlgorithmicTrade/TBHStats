@@ -4,15 +4,53 @@
     <TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <RootNamespace>TBHStats.App</RootNamespace>
+    <!--
+      ApplicationManifest (app.manifest) встраивается в exe как Win32-манифест для DPI-awareness
+      и совместимости с Windows 10+. Необходим и в packaged, и в unpackaged режиме.
+    -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x86;x64;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
     <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
+    <!--
+      EnableMsixTooling активирует MSIX single-project packaging tooling.
+      Package.appxmanifest в директории проекта подхватывается SDK автоматически при EnableMsixTooling=true.
+    -->
     <EnableMsixTooling>true</EnableMsixTooling>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!--
+      WindowsPackageType управляет режимом поставки:
+        MSIX  — packaged-сборка; Package.appxmanifest активен; WinRT-идентичность гарантирована.
+                Активируется при явной публикации: dotnet publish /p:WindowsPackageType=MSIX /p:GenerateAppxPackageOnBuild=true
+        None  — unpackaged (portable, default); Package.appxmanifest не задействован.
+                dotnet build / dotnet run / dotnet test используют этот режим.
+
+      Почему None по умолчанию:
+        Microsoft.Windows.SDK.BuildTools.MSIX задача WinAppSdkValidateAppxManifestItems
+        при WindowsPackageType=MSIX в dotnet-CLI окружении требует System.Security.Permissions
+        из MSBuild-хоста (.NET Framework). В headless dotnet-CLI среде (без VS) это проваливается
+        с MSB4018. Для CI/DevLoop использовать None; для финальной поставки — VS или MSBuild /p:WindowsPackageType=MSIX.
+        Подробнее: https://github.com/microsoft/WindowsAppSDK/issues (известный constraint).
+
+      Команды:
+        # Debug/dev build (unpackaged):
+        dotnet build src/TBHStats.App/TBHStats.App.csproj -c Debug
+
+        # Unpackaged publish (portable, self-contained):
+        dotnet publish src/TBHStats.App/TBHStats.App.csproj -c Release -r win-x64 -p:SelfContained=true
+
+        # Packaged MSIX (через VS / MSBuild, не dotnet-CLI):
+        msbuild src/TBHStats.App/TBHStats.App.csproj /p:Configuration=Release /p:Platform=x64 /p:WindowsPackageType=MSIX /p:AppxPackageSigningEnabled=false /p:GenerateAppxPackageOnBuild=true
+    -->
+    <WindowsPackageType Condition="'$(WindowsPackageType)' == ''">None</WindowsPackageType>
+    <!--
+      AppxPackageSigningEnabled=false: без подписи сертификатом для sideload/dev.
+      Для Store-публикации заменить CN=AppPublisher в Package.appxmanifest реальным сертификатом.
+    -->
+    <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
   </PropertyGroup>
 
   <ItemGroup>

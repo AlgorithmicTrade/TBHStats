@@ -32,10 +32,55 @@ tests/TBHStats.*.Tests # xUnit
 dotnet restore TBHStats.sln
 dotnet build TBHStats.sln -c Debug        # должен проходить чисто (Quality Gate VII)
 dotnet test  TBHStats.sln                 # Core/Data/Capture тесты (реальный SQLite, фикстуры-картинки)
-dotnet run --project src/TBHStats.App     # запуск виджета
+dotnet run --project src/TBHStats.App     # запуск виджета (unpackaged по умолчанию)
 ```
 
 Хранилище создаётся автоматически: `%LOCALAPPDATA%\TBHStats\tbhstats.db` (EF Core миграции применяются при старте).
+
+### Режимы поставки (T048)
+
+TBHStats поддерживает два режима сборки через MSBuild-свойство `WindowsPackageType`:
+
+#### Unpackaged (portable, default)
+
+Используется для `dotnet build`, `dotnet run`, `dotnet test` и portable-дистрибутива.
+`WindowsPackageType=None` — значение по умолчанию в csproj.
+
+```powershell
+# Debug/dev build:
+dotnet build TBHStats.sln -c Debug
+
+# Portable publish (self-contained, win-x64):
+dotnet publish src/TBHStats.App/TBHStats.App.csproj `
+  -c Release -r win-x64 `
+  -p:WindowsPackageType=None `
+  -p:SelfContained=true
+# Артефакты: src/TBHStats.App/bin/Release/net8.0-windows10.0.22621.0/win-x64/publish/TBHStats.App.exe
+```
+
+WinRT API (WGC, Windows.Media.Ocr) доступны без package identity через CsWinRT-проекции при TFM `net8.0-windows10.0.22621.0`.
+
+#### Packaged (MSIX)
+
+Предпочтительный режим для финальной поставки — надёжная WinRT-идентичность, sideload/Store.
+Требует **Visual Studio 2022 ≥ 17.8** или **MSBuild Desktop** (не `dotnet` CLI).
+
+```powershell
+# Через VS: правой кнопкой → Package and Publish → Create App Packages
+# Через MSBuild Desktop (например из Developer PowerShell for VS 2022):
+MSBuild src/TBHStats.App/TBHStats.App.csproj `
+  /p:Configuration=Release /p:Platform=x64 `
+  /p:WindowsPackageType=MSIX `
+  /p:AppxPackageSigningEnabled=false `
+  /p:GenerateAppxPackageOnBuild=true
+# Артефакты: src/TBHStats.App/bin/x64/Release/net8.0-windows10.0.22621.0/AppPackages/
+```
+
+Манифест пакета: `src/TBHStats.App/Package.appxmanifest`
+- Identity: `AlgorithmicTrade.TBHStats`, Publisher `CN=AppPublisher` (для sideload; заменить реальным сертификатом для Store).
+- Capabilities: только `runFullTrust` — без сетевых (FR-012).
+
+**Ограничение**: `dotnet build /p:WindowsPackageType=MSIX` завершается ошибкой MSB4018 в headless-CLI окружении из-за бага `Microsoft.Windows.SDK.BuildTools.MSIX` 1.7.x (не находит `System.Security.Permissions` в MSBuild-хосте). Для `dotnet build`/тестов всегда использовать `WindowsPackageType=None`.
 
 ## Запуск UI-тестов живой игры (QA-харнесс)
 

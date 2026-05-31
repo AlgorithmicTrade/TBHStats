@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using TBHStats.App.Services;
+using TBHStats.App.Services.Logging;
 using TBHStats.App.ViewModels;
 using TBHStats.Data;
 using TBHStats_App.Views;
@@ -98,6 +99,17 @@ public partial class App : Application
     }
 
     /// <summary>
+    /// Возвращает путь к директории логов TBHStats.
+    /// Базовый каталог совпадает с каталогом БД: <c>%LOCALAPPDATA%\TBHStats\logs\</c>.
+    /// Директория создаётся <see cref="FileLoggerProvider"/> при первой записи.
+    /// </summary>
+    private static string GetLogDirectory()
+    {
+        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return Path.Combine(localAppData, "TBHStats", "logs");
+    }
+
+    /// <summary>
     /// Строит DI-хост. Регистрация сервисов вынесена в composition root
     /// <see cref="Composition.AddTbhStatsServices"/> (src/TBHStats.App/Services/Composition.cs).
     /// </summary>
@@ -107,12 +119,19 @@ public partial class App : Application
 
         builder.ConfigureServices(static (_, services) => services.AddTbhStatsServices());
 
-        // Structured logging через Microsoft.Extensions.Logging; конкретные синки
-        // (файл / ETW) добавляются в Polish-фазе (T047).
-        builder.ConfigureLogging(static logging =>
+        // Structured logging: Debug-синк (для разработки) + локальный файловый синк (T047).
+        // Файловый синк: %LOCALAPPDATA%\TBHStats\logs\tbhstats-YYYY-MM-DD.log
+        // Минимальный уровень для файла — Information (Debug в файл не пишем, чтобы не раздувать).
+        // Путь к лог-директории не логируется на уровне Info/Warning во избежание PII (username в пути).
+        string logDirectory = GetLogDirectory();
+        builder.ConfigureLogging(logging =>
         {
             logging.ClearProviders();
             logging.AddDebug();
+            logging.SetMinimumLevel(LogLevel.Debug);
+
+            // Вычисляем каталог логов от того же базового каталога, что и БД (%LOCALAPPDATA%\TBHStats\).
+            logging.AddProvider(new FileLoggerProvider(logDirectory, LogLevel.Information));
         });
 
         return builder.Build();

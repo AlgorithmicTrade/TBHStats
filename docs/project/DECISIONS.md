@@ -1,7 +1,7 @@
 # TBHStats — Журнал ключевых решений (ADR-лог)
 
 **Проект**: TBHStats — десктоп-помощник по статистике для игры Task Bar Hero (Windows 11).
-**Дата журнала**: 2026-05-31
+**Дата журнала**: 2026-05-31 (обновлён T048: добавлен ADR-017)
 **Формат**: lightweight ADR (Architecture Decision Records). Каждая запись фиксирует одно архитектурное/проектное решение: контекст, выбор, отклонённые альтернативы и последствия.
 
 Этот журнал — производный артефакт: первоисточники решений — `specs/001-tbh-stats-helper/spec.md`, `plan.md`, `research.md` и `.specify/memory/constitution.md`. При расхождении приоритет за первоисточниками. Все записи ниже приняты **2026-05-31** и имеют статус **Accepted**.
@@ -25,6 +25,8 @@
 - [ADR-013 — Хранилище: SQLite + EF Core](#adr-013--хранилище-sqlite--ef-core)
 - [ADR-014 — Графики: LiveCharts2](#adr-014--графики-livecharts2)
 - [ADR-015 — UI-тесты живой игры: FlaUI + визуальная локализация, не Playwright](#adr-015--ui-тесты-живой-игры-flaui--визуальная-локализация-не-playwright)
+- [ADR-016 — Локальный файловый синк логирования: собственный FileLoggerProvider](#adr-016--локальный-файловый-синк-логирования-собственный-fileloggerprovider)
+- [ADR-017 — Режим поставки: WindowsPackageType=None (default) + MSIX через MSBuild Desktop](#adr-017--режим-поставки-windowspackagetypенone-default--msix-через-msbuild-desktop)
 
 ---
 
@@ -278,6 +280,58 @@
 **Безопасность**: потребовался **carve-out конституции (v2.1.0 → v2.2.0)** — продукт observe-only, но QA-харнесс может инжектить ввод только в тест-режиме, с Safety-Guard (запрет необратимых действий: Runes/Cube/Stash/Trade).
 
 **Последствия**: harness переиспользует продуктовый слой распознавания (двойная выгода — заодно валидирует Capture/детекцию). Эмпирический пункт: тип приложения TBH (нативное/Electron) определяется в TS-00, влияет лишь на наличие альтернативного CDP-пути.
+
+---
+
+---
+
+## ADR-016 — Локальный файловый синк логирования: собственный FileLoggerProvider
+
+**Дата**: 2026-05-31 · **Статус**: Accepted
+
+**Контекст**: T047 требует персистентного синка логирования для диагностики приложения. Стек уже использует `Microsoft.Extensions.Logging`; нужен файловый провайдер с ротацией по дате, строго без сетевых зависимостей (FR-012: никаких исходящих сетевых соединений).
+
+**Решение**: лёгкий собственный `ILoggerProvider` / `ILogger` (`FileLoggerProvider` + `FileLogger`, ~120 строк, `src/TBHStats.App/Services/Logging/`):
+- Файл: `%LOCALAPPDATA%\TBHStats\logs\tbhstats-YYYY-MM-DD.log` (тот же базовый каталог, что и БД — `DatabaseInitializer.GetDbPath()`).
+- Ротация по дате UTC: новый файл открывается при первой записи в новый день.
+- Потокобезопасность: `lock (_writeLock)` на `StreamWriter`; `_writer.Flush()` после каждой записи.
+- Минимальный уровень в файл: `Information` (Debug — только в `AddDebug()` для разработки; в файл не пишем, чтобы не раздувать).
+- Регистрация в `App.BuildHost()` через `logging.AddProvider(new FileLoggerProvider(logDir, LogLevel.Information))`.
+- Путь к лог-директории НЕ логируется на Info/Warning (PII — содержит имя пользователя).
+
+**Альтернативы/почему отклонены**:
+- **Serilog / NLog** — тянут сетевые синки в зависимости; избыточны для одного файлового синка; новая внешняя зависимость без реальной выгоды над собственными 120 строками.
+- **ETW (EventSource)** — только для профилировщиков; нечитаемый «сырой» вывод для пользовательской диагностики.
+- **`Microsoft.Extensions.Logging.AzureAppServices`** — облачный синк; нарушает FR-012.
+
+**Последствия**: нет новых NuGet-зависимостей. Файловый синк полностью локален. Ротация по дате предотвращает рост одного файла. `FileLoggerProvider.Dispose()` корректно закрывает `StreamWriter` при остановке хоста.
+
+---
+
+---
+
+## ADR-017 — Режим поставки: WindowsPackageType=None (default) + MSIX через MSBuild Desktop
+
+**Дата**: 2026-05-31 · **Статус**: Accepted
+
+**Контекст**: T048 требует настроить конфигурацию поставки MSIX (packaged) и опцию unpackaged. В проекте уже присутствуют `Package.appxmanifest` и `EnableMsixTooling=true`. Однако при попытке включить `<WindowsPackageType>MSIX</WindowsPackageType>` в `dotnet build` CLI возникает фатальная ошибка MSB4018 в задаче `WinAppSdkValidateAppxManifestItems` (пакет `Microsoft.Windows.SDK.BuildTools.MSIX` 1.7.x не находит `System.Security.Permissions` в MSBuild-хосте при запуске из dotnet CLI).
+
+**Решение**: `<WindowsPackageType>` в csproj по умолчанию установлен в `None` (unpackaged). Это позволяет:
+1. `dotnet build`/`dotnet run`/`dotnet test` работают без ограничений (unpackaged, `WindowsPackageType=None`).
+2. Packaged MSIX-сборка активируется через MSBuild Desktop (Visual Studio 2022 ≥ 17.8 или `msbuild.exe` Desktop) с явным `/p:WindowsPackageType=MSIX`.
+3. `Package.appxmanifest` исправлен: корректные `Identity.Name` / `DisplayName`, `MinVersion=10.0.19041.0` (синхронизировано с csproj `TargetPlatformMinVersion`), удалён лишний `systemai:Capability Name="systemAIModels"`, оставлен только `runFullTrust`. Сетевые capability отсутствуют (FR-012).
+4. WinRT API (WGC, Windows.Media.Ocr) доступны в обоих режимах при TFM `net8.0-windows10.0.22621.0` через CsWinRT (подтверждено build + Capture.Tests 87 pass).
+
+**Альтернативы / почему отклонены**:
+- **`WindowsPackageType=MSIX` как default в csproj** — отклонено: ломает `dotnet build` в CLI из-за бага BuildTools.MSIX 1.7.x; разработчики и CI не смогут собирать без VS.
+- **Отключить `WinAppSdkValidateAppxManifestItems` через `<DisableWinAppSdkValidateAppxManifestItems>true</DisableWinAppSdkValidateAppxManifestItems>`** — отклонено: скрывало бы будущие ошибки манифеста; правильнее разделить «сборку для разработки» и «MSIX-публикацию».
+- **Одна конфигурация без MSIX** — отклонено: R6 требует packaged как предпочтительный режим финальной поставки; необходимо сохранить оба пути.
+
+**Последствия**:
+- Разработка, CI и portable-дистрибутив работают через `dotnet build/publish -p:WindowsPackageType=None`.
+- Финальный MSIX-пакет собирается через VS «Package and Publish» или `MSBuild Desktop /p:WindowsPackageType=MSIX`.
+- `Package.appxmanifest` поддерживается в актуальном состоянии: версия пакета должна обновляться вместе с `<Version>` в `Directory.Build.props` при релизах.
+- Если BuildTools.MSIX обновится и устранит `System.Security.Permissions`-баг — `WindowsPackageType=MSIX` можно будет установить как default без последствий для `dotnet build`.
 
 ---
 

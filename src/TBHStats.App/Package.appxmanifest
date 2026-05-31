@@ -1,29 +1,51 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 
+<!--
+  Package.appxmanifest — MSIX identity manifest для TBHStats (packaged-режим).
+
+  Режимы поставки:
+    Packaged (MSIX, default):
+      dotnet build src/TBHStats.App/TBHStats.App.csproj -c Release -p:Platform=x64
+      dotnet publish src/TBHStats.App/TBHStats.App.csproj -c Release -p:Platform=x64 /p:GenerateAppxPackageOnBuild=true
+    Unpackaged (portable, dotnet run):
+      dotnet run --project src/TBHStats.App -- (см. csproj: WindowsPackageType=None через <PropertyGroup Condition>)
+      dotnet publish ... /p:WindowsPackageType=None /p:SelfContained=true
+
+  Сетевые capability НЕ подключены (FR-012: данные только локально).
+  Capability runFullTrust необходим для нативного P/Invoke (EnumWindows, WGC, D3D11).
+-->
+
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
-  xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  xmlns:systemai="http://schemas.microsoft.com/appx/manifest/systemai/windows10"
-  IgnorableNamespaces="uap rescap systemai">
+  IgnorableNamespaces="uap rescap">
 
+  <!--
+    Identity.Name: уникальный идентификатор пакета (reverse-DNS стиль).
+    Publisher: CN=AppPublisher используется для self-signed sideload и debug-сборок.
+    Для Store-публикации и ClickOnce-подписанного дистрибутива CN заменяется реальным сертификатом.
+  -->
   <Identity
-    Name="E561A82D-A719-4CB0-B2DB-125272BEBB15"
+    Name="AlgorithmicTrade.TBHStats"
     Publisher="CN=AppPublisher"
-    Version="1.0.0.0" />
-
-  <mp:PhoneIdentity PhoneProductId="E561A82D-A719-4CB0-B2DB-125272BEBB15" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
+    Version="0.1.4.0" />
 
   <Properties>
-    <DisplayName>TBHStats.App</DisplayName>
-    <PublisherDisplayName>AppPublisher</PublisherDisplayName>
+    <DisplayName>TBHStats</DisplayName>
+    <PublisherDisplayName>AlgorithmicTrade</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
+  <!--
+    MinVersion согласован с TargetPlatformMinVersion=10.0.19041.0 (csproj).
+    MaxVersionTested — последний известный сборочный SDK (10.0.28000.x → build 26226 или актуальнее).
+    Windows.Desktop закрывает WinUI 3 desktop-приложения.
+    Windows.Universal оставлен как совместимость; MinVersion совпадает.
+  -->
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26226.0" />
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26226.0" />
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26226.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26226.0" />
   </Dependencies>
 
   <Resources>
@@ -35,8 +57,8 @@
       Executable="$targetnametoken$.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="TBHStats.App"
-        Description="TBHStats.App"
+        DisplayName="TBHStats"
+        Description="Десктоп-помощник по статистике для Task Bar Hero — живые метрики, история этапов, рекомендации по фарму."
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
@@ -46,8 +68,13 @@
     </Application>
   </Applications>
 
+  <!--
+    Capabilities: ТОЛЬКО минимально необходимые для observe-only desktop-приложения.
+    runFullTrust — обязателен для Win32 P/Invoke (EnumWindows, GetClientRect),
+                   WGC (Windows.Graphics.Capture), Direct3D11, Windows.Media.Ocr.
+    Сетевые capabilities (internetClient, privateNetworkClientServer и т.п.) НЕ подключены (FR-012).
+  -->
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
-    <systemai:Capability Name="systemAIModels"/>
   </Capabilities>
 </Package>

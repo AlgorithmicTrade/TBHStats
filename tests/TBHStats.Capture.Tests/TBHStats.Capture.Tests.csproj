@@ -21,4 +21,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Content Include="..\..\screenshots\*.jpg" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

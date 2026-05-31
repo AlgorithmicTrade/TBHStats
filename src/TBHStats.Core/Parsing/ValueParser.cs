@@ -18,11 +18,26 @@ public sealed class ValueParser : IValueParser
     // ─── Регулярные выражения (компилируются один раз на тип) ────────────────
 
     /// <summary>
-    /// Разбирает число с опциональным суффиксом: «1.2K», «3.4 M», «5B», «2.5T», «1,234», «999».
-    /// Группы: «digits» — числовая часть (с запятыми/точкой), «suffix» — буква суффикса.
+    /// Разбирает число с опциональным суффиксом: «1.2K», «3.4 M», «5B», «2.5T», «1,234», «999»,
+    /// а также полноразмерные числа с пробелом-разделителем разрядов «54 678», «2 285 394»
+    /// (реальный формат TBH — европейская локаль, verified на скриншотах, GAME-FACTS §12).
+    /// Группы: «digits» — числовая часть (цифры, запятые, точка, пробел/неразрывный пробел
+    /// как разделитель разрядов), «suffix» — буква суффикса.
     /// </summary>
     private static readonly Regex AbbreviatedNumberRegex = new(
         @"^\s*(?<digits>[\d,]*\.?\d+)\s*(?<suffix>[KkMmBbTt])?\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(100));
+
+    /// <summary>
+    /// Пробел-разделитель разрядов МЕЖДУ двумя цифрами: обычный (U+0020),
+    /// неразрывный (U+00A0), узкий неразрывный (U+202F).
+    /// Удаляется перед числовым парсингом: «2 285 394» → «2285394», «54 678» → «54678».
+    /// Lookbehind/lookahead на цифры не затрагивают пробел между числом и суффиксом
+    /// («1.2 K») и обрамляющие пробелы (их обрабатывает <c>\s*</c> в основном regex).
+    /// </summary>
+    private static readonly Regex DigitGroupSeparatorRegex = new(
+        "(?<=\\d)\\p{Zs}(?=\\d)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant,
         TimeSpan.FromMilliseconds(100));
 
@@ -61,6 +76,11 @@ public sealed class ValueParser : IValueParser
 
         if (string.IsNullOrWhiteSpace(raw))
             return false;
+
+        // Полноразмерные числа TBH используют пробел как разделитель разрядов («54 678»,
+        // «2 285 394»). Убираем такой разделитель между цифрами, чтобы числовой regex
+        // (без пробелов в классе) сматчил полное значение (GAME-FACTS §12, verified в T049).
+        raw = DigitGroupSeparatorRegex.Replace(raw, string.Empty);
 
         Match match = AbbreviatedNumberRegex.Match(raw);
         if (!match.Success)

@@ -1,7 +1,7 @@
 # TBHStats — обзор проекта
 
 **Дата:** 2026-05-31
-**Статус:** spec + plan завершены (spec-driven, SpecKit); код ещё не написан.
+**Статус:** реализованы US1+US2+US3 (Phases 0–5) и большая часть Polish (Phase 6); остаётся live-acceptance (T051) и QA-харнесс (Phase 7).
 **Фича:** `001-tbh-stats-helper`
 
 ---
@@ -94,19 +94,20 @@ TBHStats закрывает этот пробел:
 
 ## 8. Текущий статус (2026-05-31)
 
-Пройдены фазы **spec** и **plan** в spec-driven подходе (SpecKit).
+Пройдены фазы **spec** и **plan** (SpecKit), затем реализация по `tasks.md`:
 
-**Артефакты** в `specs/001-tbh-stats-helper/`:
+- **Phase 1 Setup** + **Phase 2 Foundational** (T001–T018) — решение `TBHStats.sln`, домен/конфиг механик/БД/примитивы захвата (окно/кадр/OCR/ROI). ✅
+- **US1 (Phase 3, T019–T031)** — живая статистика: пайплайн захвата→OCR→валидация→темпы, виджет, калибровка ROI. ✅ MVP
+- **US2 (Phase 4, T032–T042)** — история этапов, recency-aware ранжирование и рекомендация при текущей силе отряда, экран сравнения. ✅
+- **US3 (Phase 5, T043–T046)** — графики трендов (золото/ч, опыт/ч, время) + ретенция сэмплов. ✅
+- **Polish (Phase 6, T047–T054)** — обработка ошибок + файловое логирование (T047, ADR-016), поставка MSIX/unpackaged (T048, ADR-017), **харнесс точности OCR на реальных скриншотах** (T049, выявлен и исправлен gap парсинга пробела-разделителя), perf-латентность OCR (T052), a11y-проход (T053), тесты расширяемости механик (T054). ⏳ остаётся T050 (этот документ) и **T051 live-acceptance** (требует запущенной игры).
+- **Phase 7 QA-харнесс (T055–T061)** — ещё не начат (не входит в поставку).
 
-- `spec.md` — спецификация (user stories, FR, success criteria, assumptions);
-- `plan.md` — план реализации (стек, структура решения, constitution check);
-- `research.md` — Phase 0 (исследование технологических решений);
-- `data-model.md` — модель данных + «Game UI Map»;
-- `contracts/` — контракты сервисов (`services.md`) и будущего remote API (`remote-api.openapi.yaml`);
-- `quickstart.md` — быстрый старт;
-- `checklists/requirements.md` — чек-лист качества спеки.
+**Тесты/сборка:** Core 165 · Data 64 · Capture 90 — все GREEN; `dotnet build TBHStats.sln` — 0 предупреждений / 0 ошибок.
 
-**Код ещё НЕ написан.** Следующий шаг: `/speckit.tasks` → `/speckit.implement`.
+**Артефакты спецификации** — в `specs/001-tbh-stats-helper/` (`spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`, `checklists/requirements.md`).
+
+Следующий шаг: завершить **T051** (live-smoke на реальной игре) и при необходимости начать **Phase 7** (QA-харнесс).
 
 ---
 

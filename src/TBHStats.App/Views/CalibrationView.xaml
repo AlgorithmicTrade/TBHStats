@@ -47,17 +47,32 @@
                 Spacing="8">
 
                 <Button
+                    x:Name="LoadButton"
+                    AutomationProperties.Name="Обновить список ROI из базы данных"
+                    AutomationProperties.AutomationId="CalibrationLoadButton"
                     Content="Обновить"
+                    IsTabStop="True"
+                    TabIndex="0"
                     Command="{Binding LoadCommand}"
                     IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}" />
 
                 <Button
+                    x:Name="AddRoiButton"
+                    AutomationProperties.Name="Добавить новую область ROI"
+                    AutomationProperties.AutomationId="CalibrationAddRoiButton"
                     Content="Добавить ROI"
+                    IsTabStop="True"
+                    TabIndex="1"
                     Command="{Binding AddRoiCommand}"
                     IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}" />
 
                 <Button
+                    x:Name="SaveButton"
+                    AutomationProperties.Name="Сохранить изменения калибровки ROI"
+                    AutomationProperties.AutomationId="CalibrationSaveButton"
                     Content="Сохранить"
+                    IsTabStop="True"
+                    TabIndex="2"
                     Command="{Binding SaveCommand}"
                     IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}"
                     Style="{StaticResource AccentButtonStyle}" />
@@ -132,9 +147,13 @@
                 <ListView
                     Grid.Row="1"
                     x:Name="RoiListView"
+                    AutomationProperties.Name="Список областей ROI"
+                    AutomationProperties.AutomationId="RoiListView"
                     ItemsSource="{Binding Calibrations}"
                     SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
-                    SelectionMode="Single">
+                    SelectionMode="Single"
+                    IsTabStop="True"
+                    TabIndex="3">
 
                     <ListView.ItemTemplate>
                         <DataTemplate>
@@ -156,9 +175,10 @@
 
                                 <Button
                                     Grid.Column="1"
+                                    AutomationProperties.Name="Удалить ROI"
                                     Content="&#xE74D;"
                                     FontFamily="Segoe Fluent Icons"
-                                    ToolTipService.ToolTip="Удалить"
+                                    ToolTipService.ToolTip="Удалить ROI"
                                     Command="{Binding ElementName=RoiListView, Path=DataContext.RemoveRoiCommand}"
                                     CommandParameter="{Binding}"
                                     Width="32"
@@ -191,15 +211,21 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock
+                            x:Name="FieldKeyLabel"
                             Grid.Column="0"
                             Text="Поле (FieldKey):"
                             VerticalAlignment="Center" />
 
                         <ComboBox
                             Grid.Column="1"
+                            AutomationProperties.Name="Поле FieldKey для области ROI"
+                            AutomationProperties.AutomationId="FieldKeyComboBox"
+                            AutomationProperties.LabeledBy="{Binding ElementName=FieldKeyLabel}"
                             ItemsSource="{Binding AvailableFieldKeys}"
                             SelectedItem="{Binding SelectedItem.FieldKey, Mode=TwoWay}"
                             IsEditable="True"
+                            IsTabStop="True"
+                            TabIndex="4"
                             HorizontalAlignment="Stretch" />
                     </Grid>
 
@@ -211,14 +237,20 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock
+                            x:Name="SourceLabel"
                             Grid.Column="0"
                             Text="Источник:"
                             VerticalAlignment="Center" />
 
                         <ComboBox
                             Grid.Column="1"
+                            AutomationProperties.Name="Источник данных для области ROI"
+                            AutomationProperties.AutomationId="SourceComboBox"
+                            AutomationProperties.LabeledBy="{Binding ElementName=SourceLabel}"
                             ItemsSource="{Binding AvailableSources}"
                             SelectedItem="{Binding SelectedItem.Source, Mode=TwoWay}"
+                            IsTabStop="True"
+                            TabIndex="5"
                             HorizontalAlignment="Stretch" />
                     </Grid>
 
@@ -230,16 +262,22 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock
+                            x:Name="TabLabel"
                             Grid.Column="0"
                             Text="Вкладка:"
                             VerticalAlignment="Center" />
 
                         <ComboBox
                             Grid.Column="1"
+                            AutomationProperties.Name="Вкладка интерфейса для области ROI"
+                            AutomationProperties.AutomationId="TabComboBox"
+                            AutomationProperties.LabeledBy="{Binding ElementName=TabLabel}"
                             ItemsSource="{Binding AvailableTabs}"
                             SelectedValuePath="Id"
                             SelectedValue="{Binding SelectedItem.TabId, Mode=TwoWay}"
                             DisplayMemberPath="DisplayName"
+                            IsTabStop="True"
+                            TabIndex="6"
                             HorizontalAlignment="Stretch" />
                     </Grid>
 
@@ -261,11 +299,15 @@
                         <StackPanel Grid.Column="0">
                             <TextBlock Text="X" Style="{StaticResource CaptionTextBlockStyle}" />
                             <NumberBox
+                                AutomationProperties.Name="Координата X области ROI (нормализованная доля)"
+                                AutomationProperties.AutomationId="RoiX"
                                 Value="{Binding SelectedItem.X, Mode=TwoWay}"
                                 Minimum="0"
                                 Maximum="1"
                                 SmallChange="0.01"
                                 LargeChange="0.05"
+                                IsTabStop="True"
+                                TabIndex="7"
                                 SpinButtonPlacementMode="Inline" />
                         </StackPanel>
 
@@ -273,11 +315,15 @@
                         <StackPanel Grid.Column="1">
                             <TextBlock Text="Y" Style="{StaticResource CaptionTextBlockStyle}" />
                             <NumberBox
+                                AutomationProperties.Name="Координата Y области ROI (нормализованная доля)"
+                                AutomationProperties.AutomationId="RoiY"
                                 Value="{Binding SelectedItem.Y, Mode=TwoWay}"
                                 Minimum="0"
                                 Maximum="1"
                                 SmallChange="0.01"
                                 LargeChange="0.05"
+                                IsTabStop="True"
+                                TabIndex="8"
                                 SpinButtonPlacementMode="Inline" />
                         </StackPanel>
 
@@ -285,11 +331,15 @@
                         <StackPanel Grid.Column="2">
                             <TextBlock Text="W" Style="{StaticResource CaptionTextBlockStyle}" />
                             <NumberBox
+                                AutomationProperties.Name="Ширина области ROI (нормализованная доля)"
+                                AutomationProperties.AutomationId="RoiW"
                                 Value="{Binding SelectedItem.W, Mode=TwoWay}"
                                 Minimum="0"
                                 Maximum="1"
                                 SmallChange="0.01"
                                 LargeChange="0.05"
+                                IsTabStop="True"
+                                TabIndex="9"
                                 SpinButtonPlacementMode="Inline" />
                         </StackPanel>
 
@@ -297,11 +347,15 @@
                         <StackPanel Grid.Column="3">
                             <TextBlock Text="H" Style="{StaticResource CaptionTextBlockStyle}" />
                             <NumberBox
+                                AutomationProperties.Name="Высота области ROI (нормализованная доля)"
+                                AutomationProperties.AutomationId="RoiH"
                                 Value="{Binding SelectedItem.H, Mode=TwoWay}"
                                 Minimum="0"
                                 Maximum="1"
                                 SmallChange="0.01"
                                 LargeChange="0.05"
+                                IsTabStop="True"
+                                TabIndex="10"
                                 SpinButtonPlacementMode="Inline" />
                         </StackPanel>
                     </Grid>
@@ -314,14 +368,20 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock
+                            x:Name="OcrEngineLabel"
                             Grid.Column="0"
                             Text="OCR-движок:"
                             VerticalAlignment="Center" />
 
                         <ComboBox
                             Grid.Column="1"
+                            AutomationProperties.Name="OCR-движок для распознавания области ROI"
+                            AutomationProperties.AutomationId="OcrEngineComboBox"
+                            AutomationProperties.LabeledBy="{Binding ElementName=OcrEngineLabel}"
                             ItemsSource="{Binding AvailableOcrEngines}"
                             SelectedItem="{Binding SelectedItem.OcrEngine, Mode=TwoWay}"
+                            IsTabStop="True"
+                            TabIndex="11"
                             HorizontalAlignment="Stretch" />
                     </Grid>
 
@@ -333,14 +393,20 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock
+                            x:Name="ParseHintLabel"
                             Grid.Column="0"
                             Text="Подсказка OCR:"
                             VerticalAlignment="Center" />
 
                         <TextBox
                             Grid.Column="1"
+                            AutomationProperties.Name="Подсказка для OCR-распознавания (допустимые символы)"
+                            AutomationProperties.AutomationId="ParseHintTextBox"
+                            AutomationProperties.LabeledBy="{Binding ElementName=ParseHintLabel}"
                             Text="{Binding SelectedItem.ParseHint, Mode=TwoWay}"
                             PlaceholderText="Необязательно (напр. 0123456789KMB)"
+                            IsTabStop="True"
+                            TabIndex="12"
                             HorizontalAlignment="Stretch" />
                     </Grid>
                 </StackPanel>

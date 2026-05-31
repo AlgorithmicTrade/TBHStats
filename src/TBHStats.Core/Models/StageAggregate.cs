@@ -48,4 +48,66 @@ public sealed class StageAggregate
     /// Коллекция <see cref="StageAggregateChestRate"/> — по одной записи на тип сундука.
     /// </summary>
     public ICollection<StageAggregateChestRate> ChestRates { get; set; } = new List<StageAggregateChestRate>();
+
+    // ──────────────── Свежее окно (recent) ────────────────
+    // Считается по последним <see cref="OptimizationProfile.RecentWindowSize"/> non-partial забегам.
+    // Ранжирование и рекомендация (FR-009) ведутся по этим полям, not all-time.
+
+    /// <summary>
+    /// Число non-partial забегов в свежем окне.
+    /// Считается по последним <see cref="OptimizationProfile.RecentWindowSize"/> non-partial забегам этапа.
+    /// </summary>
+    public int RecentRunCount { get; set; }
+
+    /// <summary>
+    /// Среднее золото в час по свежему окну.
+    /// Ранжирование (FR-009) использует это поле при <c>AggregationScope.Recent</c>.
+    /// </summary>
+    public double RecentAvgGoldPerHour { get; set; }
+
+    /// <summary>
+    /// Лучшее золото в час по свежему окну.
+    /// Tie-break при одинаковом <see cref="RecentAvgGoldPerHour"/>.
+    /// </summary>
+    public double RecentBestGoldPerHour { get; set; }
+
+    /// <summary>Средний опыт в час по свежему окну.</summary>
+    public double RecentAvgXpPerHour { get; set; }
+
+    /// <summary>Лучший опыт в час по свежему окну.</summary>
+    public double RecentBestXpPerHour { get; set; }
+
+    /// <summary>Средняя продолжительность забега в секундах по свежему окну.</summary>
+    public double RecentAvgDurationSeconds { get; set; }
+
+    /// <summary>Лучшая (наименьшая) продолжительность забега в секундах по свежему окну.</summary>
+    public int RecentBestDurationSeconds { get; set; }
+
+    // ──────────────── Power-context свежего окна ────────────────
+    // Прокси силы отряда по выбранному герою в забегах свежего окна.
+    // Используется UI для пометки устаревших рекомендаций (уточнение 2026-05-31).
+
+    /// <summary>
+    /// Минимальный уровень выбранного героя среди забегов свежего окна.
+    /// <c>null</c> — если свежее окно пустое (<see cref="RecentRunCount"/> = 0).
+    /// </summary>
+    public int? RecentHeroLevelMin { get; set; }
+
+    /// <summary>
+    /// Максимальный уровень выбранного героя среди забегов свежего окна.
+    /// <c>null</c> — если свежее окно пустое (<see cref="RecentRunCount"/> = 0).
+    /// </summary>
+    public int? RecentHeroLevelMax { get; set; }
+
+    /// <summary>
+    /// Минимальный урон выбранного героя среди забегов свежего окна.
+    /// <c>null</c> — если свежее окно пустое (<see cref="RecentRunCount"/> = 0).
+    /// </summary>
+    public long? RecentHeroDamageMin { get; set; }
+
+    /// <summary>
+    /// Максимальный урон выбранного героя среди забегов свежего окна.
+    /// <c>null</c> — если свежее окно пустое (<see cref="RecentRunCount"/> = 0).
+    /// </summary>
+    public long? RecentHeroDamageMax { get; set; }
 }

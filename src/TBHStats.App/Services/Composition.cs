@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using TBHStats.App.ViewModels;
 using TBHStats.Capture;
 using TBHStats.Capture.Ocr;
@@ -47,6 +48,8 @@ public static class Composition
         services.AddSingleton<IValueParser, ValueParser>();
         services.AddSingleton<IObservationValidator, ObservationValidator>();
         services.AddSingleton<IMetricsCalculator, MetricsCalculator>();
+        services.AddSingleton<IStageAggregateCalculator, StageAggregateCalculator>();
+        services.AddSingleton<IOptimizationService, OptimizationService>();
 
         // === TBHStats.Capture — захват и распознавание ==========================
 
@@ -73,11 +76,33 @@ public static class Composition
         // IAsyncDisposable — освобождается при завершении хоста.
         services.AddSingleton<ICaptureSession, CaptureSession>();
 
+        // StageCompletionDetector: singleton; детерминированная машина состояний без WinRT-зависимостей.
+        services.AddSingleton<IStageCompletionDetector, StageCompletionDetector>();
+
+        // RunRecorder: singleton; scoped-репозитории получает через IServiceScopeFactory
+        // (scope создаётся и освобождается на каждый вызов записи забега).
+        services.AddSingleton<RunRecorder>(sp => new RunRecorder(
+            scopeFactory:       sp.GetRequiredService<IServiceScopeFactory>(),
+            completionDetector: sp.GetRequiredService<IStageCompletionDetector>(),
+            gameMechanics:      sp.GetRequiredService<IGameMechanics>(),
+            logger:             sp.GetRequiredService<ILogger<RunRecorder>>()));
+
+        // OptimizationProfileService: singleton; ISettingsRepository (scoped) получает через
+        // IServiceScopeFactory — scope создаётся и освобождается на каждый вызов.
+        services.AddSingleton<OptimizationProfileService>(sp => new OptimizationProfileService(
+            scopeFactory: sp.GetRequiredService<IServiceScopeFactory>(),
+            logger:       sp.GetRequiredService<ILogger<OptimizationProfileService>>()));
+
         // === TBHStats.App — оркестрация и ViewModel'и ==========================
 
         // LiveStatsViewModel: transient; зависит от singleton IStatsOrchestrator — безопасно.
         // Создаётся на UI-потоке (в WidgetWindow) — захватывает DispatcherQueue корректно.
         services.AddTransient<LiveStatsViewModel>();
+
+        // CompareViewModel: transient; зависит от singletons + IServiceScopeFactory.
+        // Создаётся на UI-потоке (для DispatcherQueue). Scoped-зависимости открывает через
+        // IServiceScopeFactory самостоятельно внутри LoadAsync.
+        services.AddTransient<CompareViewModel>();
 
         // CalibrationViewModel: transient; зависит от scoped ISettingsRepository.
         // Регистрируем через фабрику с ScopedSettingsRepositoryProxy, чтобы не нарушать lifetime.
@@ -104,7 +129,8 @@ public static class Composition
                 metricsCalculator:  sp.GetRequiredService<IMetricsCalculator>(),
                 gameMechanics:      sp.GetRequiredService<IGameMechanics>(),
                 settingsRepository: settingsProxy,
-                logger:             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<StatsOrchestrator>>());
+                logger:             sp.GetRequiredService<ILogger<StatsOrchestrator>>(),
+                runRecorder:        sp.GetRequiredService<RunRecorder>());
         });
 
         return services;

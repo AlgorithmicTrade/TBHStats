@@ -215,12 +215,22 @@
         </Grid>
 
         <!-- ── Строка 2: Кнопки ────────────────────────────────────────────── -->
-        <Button
+        <StackPanel
             Grid.Row="2"
-            Content="Калибровка"
+            Orientation="Horizontal"
             HorizontalAlignment="Right"
-            Margin="0,8,0,0"
-            Click="OnCalibrationClicked" />
+            Spacing="8"
+            Margin="0,8,0,0">
+
+            <Button
+                Content="Сравнение"
+                Click="OnCompareClicked" />
+
+            <Button
+                Content="Калибровка"
+                Click="OnCalibrationClicked" />
+
+        </StackPanel>
 
     </Grid>
 </Window>

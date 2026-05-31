@@ -16,5 +16,11 @@ public interface IStageAggregateRepository
     /// Пересчитывает агрегат указанного этапа по всем его <c>IsPartial = false</c> забегам (FR-008, FR-010).
     /// Вызывается после добавления нового <see cref="StageRun"/>.
     /// </summary>
-    Task RecomputeForStageAsync(int stageId, CancellationToken ct);
+    /// <param name="stageId">Идентификатор этапа.</param>
+    /// <param name="recentWindowSize">
+    /// Размер свежего окна (число последних non-partial забегов для recency-aware полей).
+    /// Соответствует <see cref="TBHStats.Core.Models.OptimizationProfile.RecentWindowSize"/>.
+    /// </param>
+    /// <param name="ct">Токен отмены.</param>
+    Task RecomputeForStageAsync(int stageId, int recentWindowSize, CancellationToken ct);
 }

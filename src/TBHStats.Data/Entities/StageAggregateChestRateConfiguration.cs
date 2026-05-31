@@ -19,6 +19,7 @@ internal sealed class StageAggregateChestRateConfiguration : IEntityTypeConfigur
         builder.Property(e => e.StageId).IsRequired();
         builder.Property(e => e.ChestTypeId).IsRequired();
         builder.Property(e => e.RatePerHour).IsRequired();
+        builder.Property(e => e.RecentRatePerHour).IsRequired();
 
         builder.HasOne<ChestType>()
             .WithMany()

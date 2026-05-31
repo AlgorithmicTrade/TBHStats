@@ -5,12 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased]
 
 ## [0.1.2] - 2026-05-31
 
 ### Added
-- **US1**: реализовать живую статистику текущего забега (Phase 3, T019–T031) (efd7c2a)
+- **US1**: живая статистика текущего забега — виджет в реальном времени (золото/час, опыт/час, сундуки/час, класс/уровень/урон героя, текущий этап) на основе визуального захвата (WGC) + OCR (Phase 3, T019–T031) (efd7c2a)
+  - **Core/Optimization**: `MetricsCalculator` — живые темпы по надёжным интервалам (level-up через XpToLevel, сундуки по положительным дельтам, периоды недоступности не занижают результат; FR-006/005a) + `LiveRates`.
+  - **Core/Parsing**: `ObservationValidator` — confidence-фильтр, монотонность золота, EXP-reset как level-up, транзиентные точки сундуков → надёжный `MetricSample` (FR-005/010).
+  - **Core/Models**: общие контракты `RawObservation`, `TabRef` (граница Core↔Capture, Single Source of Truth).
+  - **Capture/Tabs**: `TabDetector` + `TabNameMatcher` — fuzzy-матч активной вкладки (Левенштейн) + OCR ROI `activeTab` (FR-002a).
+  - **Capture**: `FieldExtractor` — кадр + активная вкладка + ROIs → `RawObservation` с фильтрацией по источнику (MainZone всегда + поля активной вкладки; FR-002b).
+  - **App/Services**: `StatsOrchestrator` — фоновая петля и машина состояний NotFound/Capturing/Waiting; `LiveStatsSnapshot`; `ScopedSettingsRepositoryProxy`; composition root.
+  - **App/UI**: `WidgetWindow` — компактный перемещаемый виджет (опц. поверх окон, сохранение позиции/размера; FR-015/016); `LiveStatsViewModel` (состояния «игра не найдена»/«ожидание»/устаревание); `CalibrationView` (разметка ROI).
+  - **Data**: полная реализация `ISettingsRepository` (WidgetSettings/OptimizationProfile/RoiCalibration) на реальном SQLite.
+
+### Tested
+- 72 новых unit-теста (MetricsCalculator 18, ObservationValidator 34, TabDetector 20) на реальных объектах, без моков; всего 192/192 PASS (Core 115, Capture 50, Data 27). Сборка решения — 0 ошибок, 0 предупреждений.
 
 ## [0.1.1] - 2026-05-31
 

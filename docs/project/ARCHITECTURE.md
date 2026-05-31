@@ -2,7 +2,7 @@
 
 **Проект**: TBHStats — десктоп-помощник по статистике для игры Task Bar Hero
 **Платформа**: Windows 11 (x64/arm64), один локальный пользователь
-**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010/T022/T023/T024/T025/T026/T028)
+**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010/T022/T023/T024/T025/T026/T028/T035–T042 US2 recency-aware)
 **Спецификация-источник**: `specs/001-tbh-stats-helper/` (plan, research, data-model, contracts) · конституция `v2.2.0`
 
 > TBHStats наблюдает за окном запущенной игры, **визуально** считывает игровые показатели (золото, опыт, время этапа, класс/уровень/урон героя, текущий этап, сундуки по типам), вычисляет темпы (золото/час, опыт/час, сундуки/час), накапливает историю по 60 этапам (3 акта × 2 сложности × 10) и рекомендует оптимальный этап для фарма. Режим строго **observe-only**: никаких записей в память игры и инъекций ввода.
@@ -197,6 +197,7 @@
 |------|-----------|
 | `DesignTimeDbContextFactory.cs` | `IDesignTimeDbContextFactory<TbhStatsDbContext>` — создаёт контекст с `:memory:` для `dotnet ef migrations add`; рантайм не использует |
 | `Migrations/20260531133324_InitialCreate.cs` | Первичная миграция: создаёт все 15 таблиц, FK, уникальные индексы (в т.ч. `IX_Stages_ActId_DifficultyId_Number`) |
+| `Migrations/20260531155141_AddRecencyAwareAggregation.cs` | Аддитивная миграция (US2, T038/S1b): recency-aware поля `StageAggregates` (Recent* + power-context `RecentHeroLevel/Damage Min/Max`), `StageAggregateChestRates.RecentRatePerHour`, `OptimizationProfiles.RecentWindowSize`/`Scope`. Только `AddColumn` — история не теряется (FR-013) |
 | `Migrations/TbhStatsDbContextModelSnapshot.cs` | Снимок модели EF Core для сравнения при `migrations add` |
 | `DatabaseInitializer.cs` | Bootstrap-сервис; `static` класс с методами: `GetDbPath()`, `GetConnectionString(dbPath)`, `ConfigureSqlite(optionsBuilder, dbPath)`, `InitializeAsync(db, ct)` |
 
@@ -232,11 +233,20 @@ await DatabaseInitializer.InitializeAsync(db, ct);
 - При изменении размера/позиции (AppWindow.Changed) — сохранение в `WidgetSettings` через отдельный scope (дедупликация, задержка 500 мс).
 - При закрытии виджета — `IStatsOrchestrator.StopAsync()`.
 - Кнопка «Калибровка» открывает `CalibrationHostWindow` — отдельное окно-хост с Frame.Navigate(`CalibrationView`).
+- Кнопка «Сравнение» открывает `CompareHostWindow` — окно-хост с Frame.Navigate(`CompareView`) (US2, T041).
 
 Визуальные состояния (T031):
 - `IsGameFound == false` → красная плашка «Игра не найдена».
 - `IsWaiting == true` → жёлтая плашка «Ожидание».
 - `IsStale == true` → метка времени последнего обновления приглушена; поле `LastUpdateText`.
+
+### Экран сравнения этапов (T041/T042, US2, recency-aware)
+
+`CompareView` (`TBHStats_App.Views`) + `CompareViewModel`:
+- Таблица всех этапов с историей, ранжированных `IOptimizationService` по выбранной метрике (золото/час ↔ опыт/час, FR-009/019) и `AggregationScope` (свежее окно / вся история).
+- Рекомендованный этап помечен «★»; «устаревшие» забеги (сила окна заметно ниже текущей силы отряда из `IStatsOrchestrator.Current`) — пометкой «⚠ устар.» (текст, не только цвет — A11y).
+- Контекст силы окна (диапазон уровня/урона выбранного героя) показывается в строке (`PowerText`).
+- **Recency-aware (уточнение 2026-05-31)**: добыча зависит от растущей силы отряда (уровни/предметы/руны; сложность — измерение этапа) → рекомендация по умолчанию по свежему окну (последние `OptimizationProfile.RecentWindowSize` non-partial забегов), не по всей истории. Прокси силы — выбранный герой (`HeroSnapshot`); руны/предметы/герои 2–3 в v1 не считываются (см. spec.md Assumptions). Переключение метрики/scope — через `OptimizationProfileService` (T040), персистится в `OptimizationProfile`.
 
 ### Графики
 
@@ -384,23 +394,38 @@ Capturing ──(низкая уверенность OCR)───────�
   - Правило доступности (FR-002b): `MainZone` всегда; `Tab` — только если `activeTab.Value.TabId == roi.TabId`. `activeTab`-поле не OCR-ится (берётся из параметра). Визуальные поля `stageProgress` / `bossPresent` пропускаются в v1 (детекция в T035 StageCompletionDetector).
   - FieldKey-маппинг: `gold/xp/xpToLevel/heroDamage` → `TryParseAbbreviatedNumber`; `heroLevel` → `int.TryParse` (≥1); `heroClass` → trimmed text; `stageId` → `StageText` (сырой); `stageTime` → `TryParseStageTimeSeconds`; `nextLocation` → `TryParseStageId`; `chest:<key>` → lookup в `cfg.ChestTypes` + `TryParseAbbreviatedNumber → int`.
   - Неизвестные FieldKey тихо пропускаются; ошибки парсинга не выбрасываются — поле остаётся null (FR-005).
+- `IStageCompletionDetector` / `StageCompletionDetector` — детектор завершения этапа (FR-002, ADR-012, T035). Детерминированная машина состояний без WinRT-зависимостей; потребляет `RawObservation`, возвращает `StageCompletionEvent?`.
+  - Состояния: `InProgress` (бос ещё не виден) → `BossEngaged` (босс замечен) → обратно `InProgress` (событие выдано).
+  - Переход в `BossEngaged`: `BossPresent == true` ИЛИ `StageProgress >= 0.99`.
+  - Сигнал завершения (из `BossEngaged`): явный `BossPresent == false` ИЛИ ненулевой `StageTimeSeconds > 0`.
+  - null-значения полей = «нет данных»; не меняют состояние и не триггерят завершение.
+  - `StageCompletionEvent` (readonly record struct): `CompletedAtUtc`, `StageTimeSeconds?`, `StageProgressAtCompletion?`.
+  - `Reset()` сбрасывает в `InProgress`; вызывается при смене этапа / переходе сессии в `Waiting`/`NotFound`.
+  - Точные пороги уточняются эмпирически на фикстурах (T049).
 
 **`TBHStats.Core`**
 - `IValueParser` / `ValueParser` — сокращённые числа K/M/B/T, время этапа («SS»/«MM:SS»/«H:MM:SS»), идентификатор этапа (R4). Реализован в `TBHStats.Core/Parsing/`; без статического состояния, `CultureInfo.InvariantCulture`, `decimal`-арифметика для точных множителей.
 - `IMetricsCalculator` — темпы по надёжным интервалам (FR-006, FR-005a).
-- `IOptimizationService` — ранжирование и рекомендация этапа (FR-008/009/017/019).
+- `IStageAggregateCalculator` / `StageAggregateCalculator` — **чистая** доменная функция (T038): из забегов этапа считает `StageAggregate` (all-time + свежее окно последних N non-partial по `CompletedAtUtc` + power-context из `HeroSnapshot` + темпы сундуков). Не ставит `UpdatedAtUtc` (это делает репозиторий).
+- `IOptimizationService` — **recency-aware** ранжирование и рекомендация этапа по `OptimizationMetric` + `AggregationScope` (дефолт `Recent` = при текущей силе; `AllTime` — справка); tie-break recent best (FR-008/009/017/019).
 - `IGameMechanics` — доступ и перезагрузка `GameMechanicsConfig` (FR-021).
+
+**`TBHStats.Capture`**
+- `IStageCompletionDetector` / `StageCompletionDetector` — детерминированная машина состояний (InProgress/BossEngaged) над `RawObservation`; событие завершения этапа для сегментации забегов (T035, US2).
 
 **`TBHStats.Data`**
 - `IRunRepository` — забеги и сэмплы (FR-007).
-- `IStageAggregateRepository` — агрегаты этапов, пересчёт (FR-008).
-- `ISettingsRepository` — настройки виджета, профиль оптимизации, калибровки ROI (FR-016/003).
+- `IStageAggregateRepository` — агрегаты этапов; `RecomputeForStageAsync(stageId, recentWindowSize, ct)` пересчитывает all-time + свежее окно через `IStageAggregateCalculator` (FR-008, recency-aware).
+- `ISettingsRepository` — настройки виджета, профиль оптимизации (вкл. `RecentWindowSize`/`Scope`), калибровки ROI (FR-016/003).
 
 **`TBHStats.App/Services`** (T026)
 - `IStatsOrchestrator` / `StatsOrchestrator` — фоновая петля US1 (FR-004). Singleton. `StartAsync`/`StopAsync` управляют `CancellationTokenSource` + `Task.Run`-петлёй. Не привязан к UI-диспетчеру — ViewModel маршалирует в UI.
 - `LiveStatsSnapshot` (sealed record) — снимок для биндинга: состояние захвата + темпы + последние достоверные значения + IsStale.
 - `ScopedSettingsRepositoryProxy` (internal) — адаптер для singleton-safe доступа к scoped `ISettingsRepository`: создаёт `AsyncServiceScope` на каждый вызов через `IServiceProvider`.
-- `Composition.AddTbhStatsServices` (T004/T026) — полный composition root: Data (DbContext SQLite + 3 scoped репозитория), Core (5 singleton-сервисов), Capture (6 singleton-сервисов включая `ICaptureSession→CaptureSession`), App (singleton `IStatsOrchestrator` через фабрику с `ScopedSettingsRepositoryProxy`).
+- `RunRecorder` (T036, US2) — stateful singleton: накапливает gold/xp (с компенсацией level-up)/chest-дельты между стартом и завершением забега (по `IStageCompletionDetector`), на завершении собирает `StageRun` + `HeroSnapshot` (контекст силы) → `IRunRepository.AddRunAsync` → `IStageAggregateRepository.RecomputeForStageAsync`. Scoped-репозитории получает через `IServiceScopeFactory`. Интегрирован в петлю `StatsOrchestrator` (опц. 9-й параметр). Ограничение v1: триггер завершения зависит от визуальных полей MainZone (null до калибровки T049).
+- `OptimizationProfileService` (T040, US2) — singleton: get/save и переключение `OptimizationProfile` (метрика/`RecentWindowSize`/`Scope`) через scoped `ISettingsRepository`.
+- `CompareViewModel` / `CompareStageRow` (T042, US2) — recency-aware экран сравнения (см. §7).
+- `Composition.AddTbhStatsServices` — полный composition root: Data (DbContext SQLite + 3 scoped репозитория), Core (7 singleton-сервисов, вкл. `IStageAggregateCalculator`/`IOptimizationService`), Capture (singleton-сервисы вкл. `ICaptureSession→CaptureSession`, `IStageCompletionDetector`), App (singleton `IStatsOrchestrator`+`RunRecorder`+`OptimizationProfileService` через фабрики; transient ViewModel'и).
 
 ---
 

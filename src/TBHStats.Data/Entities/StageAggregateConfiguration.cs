@@ -27,6 +27,21 @@ internal sealed class StageAggregateConfiguration : IEntityTypeConfiguration<Sta
         builder.Property(e => e.BestDurationSeconds).IsRequired();
         builder.Property(e => e.UpdatedAtUtc).IsRequired();
 
+        // ──────────── Recency-aware поля (recent window) ────────────
+        builder.Property(e => e.RecentRunCount).IsRequired();
+        builder.Property(e => e.RecentAvgGoldPerHour).IsRequired();
+        builder.Property(e => e.RecentBestGoldPerHour).IsRequired();
+        builder.Property(e => e.RecentAvgXpPerHour).IsRequired();
+        builder.Property(e => e.RecentBestXpPerHour).IsRequired();
+        builder.Property(e => e.RecentAvgDurationSeconds).IsRequired();
+        builder.Property(e => e.RecentBestDurationSeconds).IsRequired();
+
+        // Power-context nullable поля (null если RecentRunCount = 0).
+        builder.Property(e => e.RecentHeroLevelMin).IsRequired(false);
+        builder.Property(e => e.RecentHeroLevelMax).IsRequired(false);
+        builder.Property(e => e.RecentHeroDamageMin).IsRequired(false);
+        builder.Property(e => e.RecentHeroDamageMax).IsRequired(false);
+
         builder.HasOne<Stage>()
             .WithOne()
             .HasForeignKey<StageAggregate>(e => e.StageId)

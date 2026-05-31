@@ -38,6 +38,7 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     private readonly IGameMechanics _gameMechanics;
     private readonly ISettingsRepository _settingsRepository;
     private readonly ILogger<StatsOrchestrator> _logger;
+    private readonly RunRecorder? _runRecorder;
 
     // ── Константы ─────────────────────────────────────────────────────────────
 
@@ -91,6 +92,11 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     /// <summary>
     /// Создаёт оркестратор со всеми зависимостями.
     /// </summary>
+    /// <param name="runRecorder">
+    /// Опциональный recorder забегов. Если null — запись забегов отключена
+    /// (поведение US1 не затрагивается). Регистрируется в <c>Composition</c>
+    /// после T036 как ненулевой.
+    /// </param>
     public StatsOrchestrator(
         ICaptureSession session,
         ITabDetector tabDetector,
@@ -99,7 +105,8 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         IMetricsCalculator metricsCalculator,
         IGameMechanics gameMechanics,
         ISettingsRepository settingsRepository,
-        ILogger<StatsOrchestrator> logger)
+        ILogger<StatsOrchestrator> logger,
+        RunRecorder? runRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(tabDetector);
@@ -118,6 +125,7 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         _gameMechanics      = gameMechanics;
         _settingsRepository = settingsRepository;
         _logger             = logger;
+        _runRecorder        = runRecorder;
     }
 
     /// <inheritdoc/>
@@ -293,6 +301,20 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
 
             // Обновляем «последние известные» значения из надёжного сэмпла
             UpdateLastKnownValues(sample, obs);
+        }
+
+        // ── Передать кадр в RunRecorder (запись забегов) ─────────────────────
+        if (_runRecorder is not null)
+        {
+            try
+            {
+                await _runRecorder.OnFrameAsync(obs, sample, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "RunRecorder вернул необработанное исключение; петля продолжается.");
+            }
         }
 
         // ── Вычислить темпы ───────────────────────────────────────────────────

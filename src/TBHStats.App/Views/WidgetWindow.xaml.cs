@@ -129,6 +129,15 @@ public sealed partial class WidgetWindow : Window
         }
     }
 
+    // ─── Кнопка «Сравнение» ─────────────────────────────────────────────────
+
+    private void OnCompareClicked(object sender, RoutedEventArgs e)
+    {
+        // Открываем CompareView в отдельном хост-окне.
+        CompareHostWindow compareWindow = new();
+        compareWindow.Activate();
+    }
+
     // ─── Кнопка «Калибровка» ────────────────────────────────────────────────
 
     private void OnCalibrationClicked(object sender, RoutedEventArgs e)

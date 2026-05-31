@@ -1,10 +1,10 @@
 namespace TBHStats.Data.Repositories;
 
+using Microsoft.EntityFrameworkCore;
 using TBHStats.Core.Models;
 
 /// <summary>
-/// Скелет репозитория забегов и метрических сэмплов.
-/// Полная реализация — в задаче T037.
+/// Репозиторий забегов этапов и метрических сэмплов (FR-007, FR-005a, US3).
 /// </summary>
 public sealed class RunRepository : IRunRepository
 {
@@ -17,18 +17,67 @@ public sealed class RunRepository : IRunRepository
     }
 
     /// <inheritdoc />
-    public Task AddRunAsync(StageRun run, CancellationToken ct)
-        => throw new NotImplementedException("Реализуется в T037.");
+    /// <remarks>
+    /// Сохраняет весь граф: owned HeroSnapshot и коллекцию Chests — одним SaveChanges.
+    /// EF присваивает Id после вставки.
+    /// </remarks>
+    public async Task AddRunAsync(StageRun run, CancellationToken ct)
+    {
+        _db.StageRuns.Add(run);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<StageRun>> GetRunsAsync(int stageId, CancellationToken ct)
-        => throw new NotImplementedException("Реализуется в T037.");
+    /// <remarks>
+    /// Возвращает все забеги указанного этапа, включая коллекцию Chests (explicit Include).
+    /// Owned HeroSnapshot загружается автоматически EF.
+    /// Порядок: CompletedAtUtc ascending, затем Id ascending — детерминированный.
+    /// </remarks>
+    public async Task<IReadOnlyList<StageRun>> GetRunsAsync(int stageId, CancellationToken ct)
+    {
+        return await _db.StageRuns
+            .AsNoTracking()
+            .Where(r => r.StageId == stageId)
+            .Include(r => r.Chests)
+            .OrderBy(r => r.CompletedAtUtc)
+            .ThenBy(r => r.Id)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<MetricSample>> GetSamplesAsync(int stageId, DateRange range, CancellationToken ct)
-        => throw new NotImplementedException("Реализуется в T037.");
+    /// <remarks>
+    /// Выборка сэмплов этапа в диапазоне [FromUtc, ToUtc] включительно (DateRange).
+    /// MetricSampleChest включается через Include для восстановления коллекции Chests.
+    /// </remarks>
+    public async Task<IReadOnlyList<MetricSample>> GetSamplesAsync(
+        int stageId, DateRange range, CancellationToken ct)
+    {
+        return await _db.MetricSamples
+            .AsNoTracking()
+            .Where(s => s.StageId == stageId
+                     && s.TakenAtUtc >= range.FromUtc
+                     && s.TakenAtUtc <= range.ToUtc)
+            .Include(s => s.Chests)
+            .OrderBy(s => s.TakenAtUtc)
+            .ThenBy(s => s.Id)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
-    public Task AppendSampleAsync(MetricSample sample, CancellationToken ct)
-        => throw new NotImplementedException("Реализуется в T037.");
+    /// <remarks>
+    /// Сохраняет сэмпл ТОЛЬКО если IsReliable == true (FR-005a).
+    /// Ненадёжные сэмплы молча игнорируются (no-op).
+    /// </remarks>
+    public async Task AppendSampleAsync(MetricSample sample, CancellationToken ct)
+    {
+        if (!sample.IsReliable)
+        {
+            return;
+        }
+
+        _db.MetricSamples.Add(sample);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
 }

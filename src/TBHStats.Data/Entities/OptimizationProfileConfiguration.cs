@@ -22,5 +22,11 @@ internal sealed class OptimizationProfileConfiguration : IEntityTypeConfiguratio
         builder.Property(e => e.SelectedMetric)
             .IsRequired()
             .HasConversion<int>();
+
+        builder.Property(e => e.RecentWindowSize).IsRequired();
+
+        builder.Property(e => e.Scope)
+            .IsRequired()
+            .HasConversion<int>();
     }
 }

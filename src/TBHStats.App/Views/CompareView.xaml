@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="TBHStats_App.Views.CompareView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:conv="using:TBHStats_App.Views.Converters"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <conv:BoolNegationConverter     x:Key="BoolNegationConverter" />
+        <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </Page.Resources>
+
+    <Grid RowSpacing="8" Padding="12">
+        <Grid.RowDefinitions>
+            <!-- Строка 0: заголовок -->
+            <RowDefinition Height="Auto" />
+            <!-- Строка 1: панель управления (метрика + scope) -->
+            <RowDefinition Height="Auto" />
+            <!-- Строка 2: строка статуса рекомендации -->
+            <RowDefinition Height="Auto" />
+            <!-- Строка 3: разделитель -->
+            <RowDefinition Height="Auto" />
+            <!-- Строка 4: таблица / пустое состояние -->
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ── Строка 0: Заголовок ──────────────────────────────────────────── -->
+        <TextBlock
+            Grid.Row="0"
+            Text="Сравнение этапов"
+            Style="{StaticResource TitleTextBlockStyle}" />
+
+        <!-- ── Строка 1: Панель управления ─────────────────────────────────── -->
+        <Grid Grid.Row="1" ColumnSpacing="24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Цель оптимизации: Золото/час / Опыт/час -->
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock
+                    Text="Цель оптимизации"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <RadioButton
+                        x:Name="MetricGoldButton"
+                        Content="Золото/час"
+                        GroupName="MetricGroup"
+                        IsChecked="True"
+                        Click="OnMetricGoldClicked" />
+                    <RadioButton
+                        x:Name="MetricXpButton"
+                        Content="Опыт/час"
+                        GroupName="MetricGroup"
+                        Click="OnMetricXpClicked" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Набор данных: Свежее окно / Вся история -->
+            <StackPanel Grid.Column="1" Spacing="4">
+                <TextBlock
+                    Text="Набор данных"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <RadioButton
+                        x:Name="ScopeRecentButton"
+                        Content="Свежее окно"
+                        GroupName="ScopeGroup"
+                        IsChecked="True"
+                        Click="OnScopeRecentClicked" />
+                    <RadioButton
+                        x:Name="ScopeAllTimeButton"
+                        Content="Вся история"
+                        GroupName="ScopeGroup"
+                        Click="OnScopeAllTimeClicked" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- ── Строка 2: Строка статуса рекомендации (FR-017) ──────────────── -->
+        <Border
+            Grid.Row="2"
+            Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}"
+            CornerRadius="4"
+            Padding="10,6">
+            <TextBlock
+                Text="{Binding StatusText}"
+                Style="{StaticResource BodyTextBlockStyle}"
+                FontWeight="SemiBold"
+                TextWrapping="Wrap" />
+        </Border>
+
+        <!-- ── Строка 3: Разделитель ────────────────────────────────────────── -->
+        <Border
+            Grid.Row="3"
+            Height="1"
+            Background="{ThemeResource SystemControlForegroundBaseLowBrush}"
+            Margin="0,2" />
+
+        <!-- ── Строка 4: Таблица / Пустое состояние ────────────────────────── -->
+        <Grid Grid.Row="4">
+
+            <!-- Пустое состояние: только когда IsEmpty = true -->
+            <TextBlock
+                Text="Нет данных — сыграйте на этапах, чтобы накопить историю"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                TextWrapping="Wrap"
+                TextAlignment="Center"
+                Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+            <!-- Таблица этапов: скрыта при IsEmpty = true -->
+            <Grid
+                Visibility="{Binding IsEmpty, Converter={StaticResource BoolNegationConverter}, ConverterParameter=Visibility}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Шапка таблицы -->
+                <Grid
+                    Grid.Row="0"
+                    Padding="4,4,4,6"
+                    Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="30" />
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="60" />
+                        <ColumnDefinition Width="130" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="★"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="Этап"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}" />
+                    <TextBlock Grid.Column="2" Text="Золото/ч"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                               HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="3" Text="Опыт/ч"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                               HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="4" Text="Забегов"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                               HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="5" Text="Сила"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                               Margin="8,0,0,0" />
+                </Grid>
+
+                <!-- Строки этапов -->
+                <ListView
+                    Grid.Row="1"
+                    ItemsSource="{Binding Stages}"
+                    SelectionMode="None"
+                    IsItemClickEnabled="False">
+
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Padding" Value="4,2" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnSpacing="4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="30" />
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="60" />
+                                    <ColumnDefinition Width="130" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- ★ / пусто + Rank — маркер рекомендации -->
+                                <TextBlock
+                                    Grid.Column="0"
+                                    Text="★"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    FontWeight="Bold"
+                                    Foreground="{ThemeResource SystemFillColorSuccessForegroundBrush}"
+                                    Visibility="{Binding IsRecommended, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                <!-- Этап -->
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Text="{Binding StageLabel}"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource BodyTextBlockStyle}" />
+
+                                <!-- Золото/ч -->
+                                <TextBlock
+                                    Grid.Column="2"
+                                    Text="{Binding GoldPerHourText}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Right"
+                                    Style="{StaticResource BodyTextBlockStyle}" />
+
+                                <!-- Опыт/ч -->
+                                <TextBlock
+                                    Grid.Column="3"
+                                    Text="{Binding XpPerHourText}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Right"
+                                    Style="{StaticResource BodyTextBlockStyle}" />
+
+                                <!-- Забегов -->
+                                <TextBlock
+                                    Grid.Column="4"
+                                    Text="{Binding RunCount}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Right"
+                                    Style="{StaticResource BodyTextBlockStyle}" />
+
+                                <!-- Сила + метка устаревания -->
+                                <StackPanel
+                                    Grid.Column="5"
+                                    Orientation="Horizontal"
+                                    Spacing="4"
+                                    VerticalAlignment="Center"
+                                    Margin="8,0,0,0">
+                                    <TextBlock
+                                        Text="{Binding PowerText}"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        VerticalAlignment="Center" />
+                                    <!-- A11y: текстовая метка «⚠ устар.», не только цвет -->
+                                    <TextBlock
+                                        Text="⚠ устар."
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Foreground="{ThemeResource SystemFillColorCautionForegroundBrush}"
+                                        VerticalAlignment="Center"
+                                        Visibility="{Binding IsStalePower, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Grid>
+    </Grid>
+</Page>

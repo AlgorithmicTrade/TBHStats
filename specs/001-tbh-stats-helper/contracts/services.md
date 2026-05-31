@@ -98,15 +98,22 @@ public interface IMetricsCalculator
 public readonly record struct LiveRates(double GoldPerHour, double XpPerHour, IReadOnlyDictionary<int,double> ChestPerHourByType);
 ```
 
-### `IOptimizationService` — ранжирование и рекомендация (FR-008/FR-009/FR-017/FR-019)
+### `IOptimizationService` — recency-aware ранжирование и рекомендация (FR-008/FR-009/FR-017/FR-019)
 ```csharp
 public interface IOptimizationService
 {
-    IReadOnlyList<StageRanking> RankStages(IReadOnlyList<StageAggregate> aggregates, OptimizationMetric metric);
-    StageRanking? RecommendBestStage(IReadOnlyList<StageAggregate> aggregates, OptimizationMetric metric);
+    // scope=Recent (дефолт) ранжирует по свежему окну агрегата (текущая сила отряда);
+    // scope=AllTime — по всей истории (справка). metric — золото/час или опыт/час.
+    IReadOnlyList<StageRanking> RankStages(
+        IReadOnlyList<StageAggregate> aggregates, OptimizationMetric metric, AggregationScope scope = AggregationScope.Recent);
+    StageRanking? RecommendBestStage(
+        IReadOnlyList<StageAggregate> aggregates, OptimizationMetric metric, AggregationScope scope = AggregationScope.Recent);
 }
 public enum OptimizationMetric { GoldPerHour, XpPerHour }   // FR-009 (Q2=A)
-// StageRanking: StageId, Score, Rank, Reason ("лучший по золото/час")
+public enum AggregationScope { Recent, AllTime }            // уточнение 2026-05-31: recency-aware
+// StageRanking: StageId, Score, Rank, Reason ("лучший по золото/час, свежее окно N забегов"),
+//   PowerContext (диапазон уровня/урона окна), IsStalePower (окно при заметно меньшей силе, чем текущая).
+// Рекомендация: max recent-avg выбранной метрики; tie-break — recent best. Пустые/только-partial этапы пропускаются.
 ```
 
 ### `IGameMechanics` — конфиг механик (FR-021)
@@ -138,7 +145,9 @@ public interface IRunRepository
 public interface IStageAggregateRepository
 {
     Task<IReadOnlyList<StageAggregate>> GetAllAsync(CancellationToken ct);      // экран сравнения
-    Task RecomputeForStageAsync(StageId stage, CancellationToken ct);          // FR-008 после нового забега
+    // FR-008 после нового забега: пересчитывает all-time И свежее окно (последние recentWindowSize
+    // non-partial забегов) + power-context (диапазон уровня/урона выбранного героя в окне). recency-aware.
+    Task RecomputeForStageAsync(StageId stage, int recentWindowSize, CancellationToken ct);
 }
 ```
 

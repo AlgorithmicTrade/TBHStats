@@ -96,8 +96,8 @@ tests/TBHStats.Core.Tests   tests/TBHStats.Capture.Tests   tests/TBHStats.Data.T
 
 **⚠️ CRITICAL**: ни одна US не начинается до завершения Phase 2.
 
-- [ ] T005 [P] Енумы и value-объекты (`OptimizationMetric`, `CaptureState`, `WindowVisibility`, `FieldSource`, `StageRef`) в `src/TBHStats.Core/Models/`
-- [ ] T006 [P] Доменные модели справочников (`Stage`, `Act`, `Difficulty`, `ChestType`, `HeroClass`, `Tab`, `HeroSnapshot`) в `src/TBHStats.Core/Models/`
+- [X] T005 [P] Енумы и value-объекты (`OptimizationMetric`, `CaptureState`, `WindowVisibility`, `StageRef`; `FieldSource` перенесён в T006 к config-моделям) в `src/TBHStats.Core/Models/` → Artifacts: OptimizationMetric.cs, CaptureState.cs, WindowVisibility.cs, StageRef.cs
+- [X] T006 [P] Доменные модели справочников (`Stage`, `Act`, `Difficulty`, `ChestType`, `HeroClass`, `Tab`, `HeroSnapshot`) + енумы `FieldSource`/`OcrEngine`/`Theme` + config/state-модели (`RoiCalibration`, `WidgetSettings`, `OptimizationProfile`) в `src/TBHStats.Core/Models/` → Artifacts: ChestType.cs, HeroClass.cs, Tab.cs, Act.cs, Difficulty.cs, Stage.cs, HeroSnapshot.cs, FieldSource.cs, OcrEngine.cs, Theme.cs, RoiCalibration.cs, WidgetSettings.cs, OptimizationProfile.cs
 - [ ] T007 `GameMechanicsConfig` + дефолтный сид (9 разделов; 3 типа сундуков brown/blue/red; 3 акта × 2 сложности Normal/Nightmare × 10 = 60 этапов; дефолтные Field Source Bindings gold→Hero, stats→Status, stage→Portal, MainZone) в `src/TBHStats.Core/Mechanics/GameMechanicsConfig.cs`
 - [ ] T008 [P] `IValueParser` + парсер сокращённых чисел (K/M/B/T), времени этапа, идентификатора этапа (act-stage) в `src/TBHStats.Core/Parsing/ValueParser.cs`
 - [ ] T009 EF Core `TbhStatsDbContext` + конфигурации сущностей (все сущности из data-model.md) в `src/TBHStats.Data/TbhStatsDbContext.cs`

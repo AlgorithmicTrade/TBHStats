@@ -36,16 +36,19 @@ internal static class GraphicsCaptureItemInterop
         /// <summary>
         /// Создать GraphicsCaptureItem из HWND (unpackaged desktop).
         /// vtable-slot 3 (0-based): после QueryInterface, AddRef, Release.
+        /// Возвращаем сырой ABI-указатель (out IntPtr), а не <c>out object</c>:
+        /// встроенный COM-маршалинг создаёт обычный __ComObject (RCW), который НЕ является
+        /// CsWinRT-проецированным GraphicsCaptureItem. Проекцию строим через GraphicsCaptureItem.FromAbi.
         /// </summary>
         void CreateForWindow(
             [In] IntPtr window,
             [In] ref Guid iid,
-            [MarshalAs(UnmanagedType.Interface)] out object ppv);
+            out IntPtr ppv);
 
         void CreateForMonitor(
             [In] IntPtr monitor,
             [In] ref Guid iid,
-            [MarshalAs(UnmanagedType.Interface)] out object ppv);
+            out IntPtr ppv);
     }
 
     /// <summary>
@@ -64,13 +67,22 @@ internal static class GraphicsCaptureItemInterop
         var interop = (IGraphicsCaptureItemInterop)factory;
 
         Guid iid = IID_GraphicsCaptureItem;
-        interop.CreateForWindow(hwnd, ref iid, out object ppv);
+        interop.CreateForWindow(hwnd, ref iid, out IntPtr itemAbi);
 
-        if (ppv is not GraphicsCaptureItem item)
+        if (itemAbi == IntPtr.Zero)
             throw new InvalidCastException(
-                $"IGraphicsCaptureItemInterop.CreateForWindow не вернул GraphicsCaptureItem (HWND=0x{hwnd:X}).");
+                $"IGraphicsCaptureItemInterop.CreateForWindow вернул null-указатель (HWND=0x{hwnd:X}).");
 
-        return item;
+        try
+        {
+            // FromAbi строит CsWinRT-проекцию поверх ABI-указателя (делает AddRef),
+            // поэтому исходный указатель освобождаем.
+            return GraphicsCaptureItem.FromAbi(itemAbi);
+        }
+        finally
+        {
+            Marshal.Release(itemAbi);
+        }
     }
 
     // ── WindowsRuntimeMarshal helper ─────────────────────────────────────────
@@ -82,9 +94,15 @@ internal static class GraphicsCaptureItemInterop
     /// </summary>
     private static class WindowsRuntimeMarshal
     {
+        // ВАЖНО: встроенный маршалинг UnmanagedType.HString удалён в .NET 5+
+        // (был доступен только в .NET Framework с built-in WinRT support).
+        // Прямое [MarshalAs(UnmanagedType.HString)] string приводит к
+        // MarshalDirectiveException: "Cannot marshal 'parameter #1'...".
+        // Используем кастомный HStringMarshaler (рекомендация Microsoft Learn,
+        // docs/standard/native-interop/best-practices.md).
         [DllImport("combase.dll", ExactSpelling = true, PreserveSig = false)]
         private static extern void RoGetActivationFactory(
-            [MarshalAs(UnmanagedType.HString)] string activatableClassId,
+            [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(HStringMarshaler))] string activatableClassId,
             ref Guid iid,
             [MarshalAs(UnmanagedType.Interface)] out object factory);
 
@@ -101,5 +119,65 @@ internal static class GraphicsCaptureItemInterop
             RoGetActivationFactory(classId, ref iid, out object factory);
             return factory;
         }
+    }
+
+    // ── HSTRING custom marshaler ─────────────────────────────────────────────
+    //
+    /// <summary>
+    /// Кастомный маршалер string ↔ WinRT HSTRING. Замена удалённого в .NET 5+
+    /// встроенного <c>UnmanagedType.HString</c>.
+    /// Источник: Microsoft Learn — docs/standard/native-interop/best-practices.md.
+    /// </summary>
+    private sealed class HStringMarshaler : ICustomMarshaler
+    {
+        private static readonly HStringMarshaler Instance = new();
+
+        // Контракт ICustomMarshaler: статический фабричный метод по сигнатуре GetInstance(string).
+        public static ICustomMarshaler GetInstance(string _) => Instance;
+
+        public void CleanUpManagedData(object managedObj) { }
+
+        public void CleanUpNativeData(IntPtr pNativeData)
+        {
+            if (pNativeData != IntPtr.Zero)
+                Marshal.ThrowExceptionForHR(WindowsDeleteString(pNativeData));
+        }
+
+        public int GetNativeDataSize() => -1;
+
+        public IntPtr MarshalManagedToNative(object managedObj)
+        {
+            if (managedObj is null)
+                return IntPtr.Zero;
+
+            var str = (string)managedObj;
+            Marshal.ThrowExceptionForHR(WindowsCreateString(str, str.Length, out IntPtr ptr));
+            return ptr;
+        }
+
+        public object MarshalNativeToManaged(IntPtr pNativeData)
+        {
+            if (pNativeData == IntPtr.Zero)
+                return null!;
+
+            IntPtr ptr = WindowsGetStringRawBuffer(pNativeData, out int length);
+            if (ptr == IntPtr.Zero)
+                return null!;
+
+            return length == 0 ? string.Empty : Marshal.PtrToStringUni(ptr, length)!;
+        }
+
+        [DllImport("api-ms-win-core-winrt-string-l1-1-0.dll")]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern int WindowsCreateString(
+            [MarshalAs(UnmanagedType.LPWStr)] string sourceString, int length, out IntPtr hstring);
+
+        [DllImport("api-ms-win-core-winrt-string-l1-1-0.dll")]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern int WindowsDeleteString(IntPtr hstring);
+
+        [DllImport("api-ms-win-core-winrt-string-l1-1-0.dll")]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern IntPtr WindowsGetStringRawBuffer(IntPtr hstring, out int length);
     }
 }

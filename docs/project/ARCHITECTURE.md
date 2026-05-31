@@ -2,7 +2,7 @@
 
 **Проект**: TBHStats — десктоп-помощник по статистике для игры Task Bar Hero
 **Платформа**: Windows 11 (x64/arm64), один локальный пользователь
-**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010/T022/T023/T024/T025/T026/T028/T035–T042 US2 recency-aware; T043–T046 US3 тренды/ретенция; T047 обработка ошибок и логирование; T048 конфигурация поставки MSIX/unpackaged; T053 accessibility-проход)
+**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010/T022/T023/T024/T025/T026/T028/T035–T042 US2 recency-aware; T043–T046 US3 тренды/ретенция; T047 обработка ошибок и логирование; T048 конфигурация поставки MSIX/unpackaged; T053 accessibility-проход; фикс старта виджета и захвата: XAML-кисти WinUI 3, static-init `GameWindowTrackerOptions`, CsWinRT-маршалинг WGC/D3D11 interop, подсказки заголовка без `"TBH"`; калибровка ROI: живой кадр через общий ICaptureSession + ScrollViewer-зум/панорамирование + рисование рамки мышью по пикселям кадра)
 **Спецификация-источник**: `specs/001-tbh-stats-helper/` (plan, research, data-model, contracts) · конституция `v2.2.0`
 
 > TBHStats наблюдает за окном запущенной игры, **визуально** считывает игровые показатели (золото, опыт, время этапа, класс/уровень/урон героя, текущий этап, сундуки по типам), вычисляет темпы (золото/час, опыт/час, сундуки/час), накапливает историю по 60 этапам (3 акта × 2 сложности × 10) и рекомендует оптимальный этап для фарма. Режим строго **observe-only**: никаких записей в память игры и инъекций ввода.
@@ -71,8 +71,8 @@
 **Реализация (T013):** `ICaptureSession` + `CaptureSession` в `TBHStats.Capture/Wgc/`:
 - `ICaptureSession` (IAsyncDisposable) — `CaptureState State`, `event Action<CaptureState> StateChanged`, `Task<CapturedFrame?> TryGetFrameAsync(CancellationToken)`.
 - `CaptureSession` — реальный WGC-pipeline без заглушек:
-  - `Direct3D11Interop.CreateDevice()`: `D3D11CreateDevice` (d3d11.dll, `D3D11_DRIVER_TYPE_HARDWARE`, флаг `BGRA_SUPPORT`) → QI до `IDXGIDevice` → `CreateDirect3D11DeviceFromDXGIDevice` → WinRT-обёртка `IDirect3DDevice`.
-  - `GraphicsCaptureItemInterop.CreateForWindow(hwnd)`: `RoGetActivationFactory("Windows.Graphics.Capture.GraphicsCaptureItem")` → QI до `IGraphicsCaptureItemInterop` (GUID `3628E81B-...`) → `CreateForWindow` → `GraphicsCaptureItem`.
+  - `Direct3D11Interop.CreateDevice()`: `D3D11CreateDevice` (d3d11.dll, `D3D11_DRIVER_TYPE_HARDWARE`, флаг `BGRA_SUPPORT`) → QI до `IDXGIDevice` → `CreateDirect3D11DeviceFromDXGIDevice` → WinRT-обёртка `IDirect3DDevice`. **Маршалинг ABI→проекция: `WinRT.MarshalInterface<IDirect3DDevice>.FromAbi(ptr)`** (НЕ `Marshal.GetObjectForIUnknown` и НЕ `MarshalInspectable<object>` — те дают generic `__ComObject`, который CsWinRT не может повторно замаршалить в нативный `IDirect3DDevice` при передаче во framePool: «Failed to create a CCW for `__ComObject`»).
+  - `GraphicsCaptureItemInterop.CreateForWindow(hwnd)`: `RoGetActivationFactory("Windows.Graphics.Capture.GraphicsCaptureItem")` → QI до `IGraphicsCaptureItemInterop` (GUID `3628E81B-...`) → `CreateForWindow` (возвращает **ABI-указатель `out IntPtr`**) → **`GraphicsCaptureItem.FromAbi(ptr)`** + `Marshal.Release`. **`RoGetActivationFactory` использует кастомный `HStringMarshaler : ICustomMarshaler`** вместо `UnmanagedType.HString` (встроенная поддержка HSTRING-маршалинга удалена в .NET 5+; прямое `[MarshalAs(UnmanagedType.HString)]` даёт `MarshalDirectiveException`).
   - `Direct3D11CaptureFramePool.CreateFreeThreaded(device, B8G8R8A8UIntNormalized, 2, size)` — не требует UI-диспетчера, безопасен для фоновых циклов.
   - `GraphicsCaptureSession.StartCapture()` с опциональным `IsBorderRequired = false` (Windows 11 SDK 22621+; игнорируется при недоступности).
   - При ресайзе окна — `framePool.Recreate(...)`.
@@ -234,6 +234,9 @@ await DatabaseInitializer.InitializeAsync(db, ct);
 - При изменении размера/позиции (AppWindow.Changed) — сохранение в `WidgetSettings` через отдельный scope (дедупликация, задержка 500 мс).
 - При закрытии виджета — `IStatsOrchestrator.StopAsync()`.
 - Кнопка «Калибровка» открывает `CalibrationHostWindow` — отдельное окно-хост с Frame.Navigate(`CalibrationView`).
+  - `CalibrationViewModel` получает **общий singleton `ICaptureSession`** (тот же, что у оркестратора; доступ сериализован семафором сессии). Команда `CaptureFrame` делает снимок окна игры (`TryGetFrameAsync`), конвертирует `SoftwareBitmap`→`SoftwareBitmapSource` (BGRA8 Premultiplied) на UI-потоке и кладёт в `FrameImage` + `FrameWidthPx/FrameHeightPx`. Авто-захват при открытии страницы; кнопка «Захватить кадр» — повторный снимок.
+  - Кадр показывается в `ScrollViewer` (`ZoomMode="Enabled"`, MinZoom 0.1 / MaxZoom 16) с панорамированием; контент `PreviewContent` имеет размер кадра в пикселях (`Width/Height ← FrameWidthPx/FrameHeightPx`), `Image` `Stretch="Fill"`. Масштаб: Ctrl+колесо / кнопки «−/Вписать/+»; при захвате кадр авто-вписывается (`FitToView` через `DispatcherQueue`).
+  - ROI задаётся **рисованием рамки мышью** прямо по кадру (`CalibrationView.xaml.cs`: PointerPressed/Moved/Released на `PreviewContent`). Координаты ROI — это **доли от размера контента**: `SelectedItem.X = pixel / RoiOverlayCanvas.ActualWidth` и т.п. (letterbox не нужен — контент совпадает с кадром по пропорциям; зум/панорамирование учитываются автоматически, т.к. `GetCurrentPoint(RoiOverlayCanvas)` возвращает координаты в системе контента). Оверлей лежит внутри зумируемого контента → рамки масштабируются вместе с кадром. Числовые поля X/Y/W/H остаются для тонкой правки (живая перерисовка оверлея).
 - Кнопка «Сравнение» открывает `CompareHostWindow` — окно-хост с Frame.Navigate(`CompareView`) (US2, T041).
 - Кнопка «Графики» открывает `ChartsHostWindow` — окно-хост с Frame.Navigate(`ChartsView`) (US3, T045).
 - **Keyboard accelerators (T053 A11y)**: Alt+G — графики, Alt+C — сравнение, Alt+K — калибровка. Все кнопки имеют `AutomationProperties.Name` и `AutomationProperties.AutomationId`.
@@ -412,7 +415,7 @@ Capturing ──(низкая уверенность OCR)───────�
 
 **`TBHStats.Capture`**
 - `IGameWindowTracker` — поиск/отслеживание окна, размер клиентской области (FR-001, FR-005b).
-  - Реализация: `GameWindowTracker` (Win32 EnumWindows + user32.dll P/Invoke). Конфигурируется через `GameWindowTrackerOptions.WindowTitleHints` (case-insensitive Contains, дефолты: `"Task Bar Hero"`, `"TaskBarHero"`, `"TBH"`).
+  - Реализация: `GameWindowTracker` (Win32 EnumWindows + user32.dll P/Invoke). Конфигурируется через `GameWindowTrackerOptions.WindowTitleHints` (case-insensitive Contains, дефолты: `"Task Bar Hero"`, `"TaskBarHero"`). **Короткую подсказку `"TBH"` НЕ использовать** — она даёт ложное совпадение с собственным окном (`TBHStats`) и окном редактора (`… - TBHStats - Visual Studio Code`), которые в Z-order часто выше игры (захват не того окна → пустые значения). Порядок static-полей в `GameWindowTrackerOptions` значим: `DefaultTitleHints` объявляется ДО `Default = new()`, иначе `Default.WindowTitleHints == null` (NRE в `FindGameWindow`).
   - Вспомогательные типы: `GameWindowHandle` (HWND + PID + заголовок), `SizePx` (ширина × высота клиентской области).
   - `GetVisibility`: `!IsWindow` → `Closed`; `IsIconic` → `Minimized`; иначе → `Visible`. Перекрытие НЕ влияет на статус.
   - `GetClientSize`: `GetClientRect` → `SizePx`; невалидный HWND → `SizePx.Empty` (0×0), без исключения.

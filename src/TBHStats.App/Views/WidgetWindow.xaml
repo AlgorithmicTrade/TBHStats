@@ -52,7 +52,7 @@
                                   ConverterParameter=Visibility}">
             <TextBlock
                 Text="Игра не найдена"
-                Foreground="{ThemeResource SystemFillColorCriticalForegroundBrush}"
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                 FontWeight="SemiBold"
                 HorizontalAlignment="Center" />
         </Border>
@@ -69,7 +69,7 @@
             Visibility="{Binding IsWaiting, Converter={StaticResource BoolToVisibilityConverter}}">
             <TextBlock
                 Text="Ожидание"
-                Foreground="{ThemeResource SystemFillColorCautionForegroundBrush}"
+                Foreground="{ThemeResource SystemFillColorCautionBrush}"
                 FontWeight="SemiBold"
                 HorizontalAlignment="Center" />
         </Border>
@@ -95,7 +95,7 @@
                     Grid.Column="0"
                     Text="Золото/ч"
                     Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     VerticalAlignment="Center" />
                 <TextBlock
                     x:Name="GoldPerHourValue"
@@ -118,7 +118,7 @@
                     Grid.Column="0"
                     Text="Опыт/ч"
                     Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     VerticalAlignment="Center" />
                 <TextBlock
                     x:Name="XpPerHourValue"
@@ -141,7 +141,7 @@
                     Grid.Column="0"
                     Text="Сундуки/ч"
                     Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     VerticalAlignment="Center" />
                 <TextBlock
                     x:Name="ChestsPerHourValue"
@@ -164,7 +164,7 @@
                     Grid.Column="0"
                     Text="Герой"
                     Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     VerticalAlignment="Center" />
                 <StackPanel
                     Grid.Column="1"
@@ -182,7 +182,7 @@
                     <TextBlock
                         Text="{Binding HeroDamageText}"
                         Style="{StaticResource CaptionTextBlockStyle}"
-                        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         VerticalAlignment="Center" />
                 </StackPanel>
             </Grid>
@@ -197,7 +197,7 @@
                     Grid.Column="0"
                     Text="Этап"
                     Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     VerticalAlignment="Center" />
                 <StackPanel
                     Grid.Column="1"
@@ -210,7 +210,7 @@
                     <TextBlock
                         Text="{Binding GoldText}"
                         Style="{StaticResource CaptionTextBlockStyle}"
-                        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         VerticalAlignment="Center" />
                 </StackPanel>
             </Grid>
@@ -225,13 +225,13 @@
                     Grid.Column="0"
                     Text="{Binding StatusText}"
                     Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     VerticalAlignment="Center" />
                 <TextBlock
                     Grid.Column="1"
                     Text="{Binding LastUpdateText}"
                     Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Opacity="{Binding IsStale, Converter={StaticResource BoolToVisibilityConverter}}"
                     VerticalAlignment="Center" />
             </Grid>

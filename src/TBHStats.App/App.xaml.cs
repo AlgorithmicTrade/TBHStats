@@ -47,6 +47,26 @@ public partial class App : Application
     {
         _host = BuildHost();
         InitializeComponent();
+
+        // Глобальный перехват необработанных исключений UI-потока: логируем полный стек и
+        // НЕ даём одному сбою (например, в окне калибровки) уронить весь виджет.
+        UnhandledException += OnUnhandledException;
+    }
+
+    private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    {
+        try
+        {
+            ILogger<App> logger = Services.GetRequiredService<ILogger<App>>();
+            logger.LogError(e.Exception, "Необработанное исключение UI-потока: {Message}", e.Message);
+        }
+        catch
+        {
+            // логгер недоступен — глотать нельзя молча, но и падать из обработчика нельзя
+        }
+
+        // Помечаем обработанным, чтобы процесс не завершался аварийно.
+        e.Handled = true;
     }
 
     /// <summary>

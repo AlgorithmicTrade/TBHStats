@@ -99,11 +99,13 @@ internal static class Direct3D11Interop
 
                 try
                 {
-                    // Маршалируем IInspectable → управляемый IDirect3DDevice
-                    object? obj = Marshal.GetObjectForIUnknown(inspectablePtr);
-                    if (obj is not IDirect3DDevice device)
-                        throw new InvalidCastException(
-                            "CreateDirect3D11DeviceFromDXGIDevice не вернул IDirect3DDevice.");
+                    // Маршалируем IInspectable → управляемый IDirect3DDevice ЧЕРЕЗ CsWinRT-проекцию
+                    // КОНКРЕТНОГО интерфейса. Marshal.GetObjectForIUnknown и MarshalInspectable<object>
+                    // дают generic __ComObject, который CsWinRT не может повторно замаршалить в нативный
+                    // IDirect3DDevice при передаче в Direct3D11CaptureFramePool
+                    // (ошибка "Failed to create a CCW for __ComObject"). MarshalInterface<IDirect3DDevice>
+                    // строит проекцию именно нужного интерфейса (идиом официальных Win32-capture-сэмплов).
+                    IDirect3DDevice device = global::WinRT.MarshalInterface<IDirect3DDevice>.FromAbi(inspectablePtr);
                     return device;
                 }
                 finally

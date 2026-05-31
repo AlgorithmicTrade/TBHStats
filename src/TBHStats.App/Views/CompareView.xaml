@@ -46,7 +46,7 @@
                     x:Name="MetricLabel"
                     Text="Цель оптимизации"
                     Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}" />
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 <StackPanel
                     Orientation="Horizontal"
                     Spacing="8"
@@ -80,7 +80,7 @@
                     x:Name="ScopeLabel"
                     Text="Набор данных"
                     Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}" />
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 <StackPanel
                     Orientation="Horizontal"
                     Spacing="8"
@@ -129,7 +129,7 @@
         <Border
             Grid.Row="3"
             Height="1"
-            Background="{ThemeResource SystemControlForegroundBaseLowBrush}"
+            Background="{ThemeResource ControlFillColorSecondaryBrush}"
             Margin="0,2" />
 
         <!-- ── Строка 4: Таблица / Пустое состояние ────────────────────────── -->
@@ -142,7 +142,7 @@
                 VerticalAlignment="Center"
                 TextWrapping="Wrap"
                 TextAlignment="Center"
-                Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}" />
 
             <!-- Таблица этапов: скрыта при IsEmpty = true -->
@@ -157,7 +157,7 @@
                 <Grid
                     Grid.Row="0"
                     Padding="4,4,4,6"
-                    Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="30" />
                         <ColumnDefinition Width="120" />
@@ -171,22 +171,22 @@
                                HorizontalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="Этап"
                                Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}" />
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <TextBlock Grid.Column="2" Text="Золото/ч"
                                Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                HorizontalAlignment="Right" />
                     <TextBlock Grid.Column="3" Text="Опыт/ч"
                                Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                HorizontalAlignment="Right" />
                     <TextBlock Grid.Column="4" Text="Забегов"
                                Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                HorizontalAlignment="Right" />
                     <TextBlock Grid.Column="5" Text="Сила"
                                Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                Margin="8,0,0,0" />
                 </Grid>
 
@@ -225,7 +225,7 @@
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
                                     FontWeight="Bold"
-                                    Foreground="{ThemeResource SystemFillColorSuccessForegroundBrush}"
+                                    Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                                     Visibility="{Binding IsRecommended, Converter={StaticResource BoolToVisibilityConverter}}" />
 
                                 <!-- Этап -->
@@ -274,7 +274,7 @@
                                     <TextBlock
                                         Text="⚠ устар."
                                         Style="{StaticResource CaptionTextBlockStyle}"
-                                        Foreground="{ThemeResource SystemFillColorCautionForegroundBrush}"
+                                        Foreground="{ThemeResource SystemFillColorCautionBrush}"
                                         VerticalAlignment="Center"
                                         Visibility="{Binding IsStalePower, Converter={StaticResource BoolToVisibilityConverter}}" />
                                 </StackPanel>

@@ -21,11 +21,11 @@
       Факт: ____________________
 - [X] `dotnet test TBHStats.sln` → Core/Data/Capture GREEN (ожидаемо Core 165 · Data 64 · Capture 90).
       Факт: ____________________
-- [ ] `dotnet run --project src/TBHStats.App` → виджет появился на рабочем столе.
+- [X] `dotnet run --project src/TBHStats.App` → виджет появился на рабочем столе.
       Факт: ____________________
-- [ ] БД создалась: существует `%LOCALAPPDATA%\TBHStats\tbhstats.db`.
+- [X] БД создалась: существует `%LOCALAPPDATA%\TBHStats\tbhstats.db`.
       Факт: ____________________
-- [ ] Лог-файл создаётся: появился `%LOCALAPPDATA%\TBHStats\logs\tbhstats-YYYY-MM-DD.log`, в нём строка «Петля захвата запущена.» (проверка T047).
+- [X] Лог-файл создаётся: появился `%LOCALAPPDATA%\TBHStats\logs\tbhstats-YYYY-MM-DD.log`, в нём строка «Петля захвата запущена.» (проверка T047).
       Факт: ____________________
 
 ## 2. Первичная калибровка ROI (один раз)

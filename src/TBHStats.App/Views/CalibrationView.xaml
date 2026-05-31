@@ -47,12 +47,23 @@
                 Spacing="8">
 
                 <Button
+                    x:Name="CaptureFrameButton"
+                    AutomationProperties.Name="Захватить текущий кадр игры"
+                    AutomationProperties.AutomationId="CalibrationCaptureFrameButton"
+                    Content="Захватить кадр"
+                    IsTabStop="True"
+                    TabIndex="0"
+                    Command="{Binding CaptureFrameCommand}"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}"
+                    ToolTipService.ToolTip="Сделать снимок окна игры для разметки ROI" />
+
+                <Button
                     x:Name="LoadButton"
                     AutomationProperties.Name="Обновить список ROI из базы данных"
                     AutomationProperties.AutomationId="CalibrationLoadButton"
                     Content="Обновить"
                     IsTabStop="True"
-                    TabIndex="0"
+                    TabIndex="1"
                     Command="{Binding LoadCommand}"
                     IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}" />
 
@@ -62,7 +73,7 @@
                     AutomationProperties.AutomationId="CalibrationAddRoiButton"
                     Content="Добавить ROI"
                     IsTabStop="True"
-                    TabIndex="1"
+                    TabIndex="2"
                     Command="{Binding AddRoiCommand}"
                     IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}" />
 
@@ -72,54 +83,124 @@
                     AutomationProperties.AutomationId="CalibrationSaveButton"
                     Content="Сохранить"
                     IsTabStop="True"
-                    TabIndex="2"
+                    TabIndex="3"
                     Command="{Binding SaveCommand}"
                     IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}"
                     Style="{StaticResource AccentButtonStyle}" />
             </StackPanel>
         </Grid>
 
-        <!-- ── Строка 1: Предпросмотр кадра + оверлей ROI ────────────────────── -->
-        <Border
-            Grid.Row="1"
-            BorderBrush="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-            BorderThickness="1"
-            CornerRadius="4"
-            Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
+        <!-- ── Строка 1: Предпросмотр кадра (зум/панорамирование) + оверлей ROI ── -->
+        <Grid Grid.Row="1">
+            <Border
+                BorderBrush="{ThemeResource TextFillColorSecondaryBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
 
-            <Grid x:Name="PreviewGrid" SizeChanged="PreviewGrid_SizeChanged">
-                <!-- Изображение кадра. FrameImage = null → серый фон с подсказкой. -->
-                <Image
-                    x:Name="FrameImageControl"
-                    Source="{Binding FrameImage}"
-                    Stretch="Uniform"
-                    HorizontalAlignment="Stretch"
-                    VerticalAlignment="Stretch" />
+                <!-- ScrollViewer обеспечивает зум (Ctrl+колесо) и панорамирование (полосы/колесо).
+                     Контент PreviewContent имеет размер кадра в пикселях (Width/Height ← FrameWidthPx/Px),
+                     поэтому координаты ROI = доля от размера контента (letterbox не нужен). -->
+                <ScrollViewer
+                    x:Name="PreviewScrollViewer"
+                    ZoomMode="Enabled"
+                    MinZoomFactor="0.1"
+                    MaxZoomFactor="16"
+                    HorizontalScrollMode="Enabled"
+                    VerticalScrollMode="Enabled"
+                    HorizontalScrollBarVisibility="Auto"
+                    VerticalScrollBarVisibility="Auto">
 
-                <!-- Заглушка при отсутствии кадра -->
+                    <Grid
+                        x:Name="PreviewContent"
+                        Width="{Binding FrameWidthPx}"
+                        Height="{Binding FrameHeightPx}"
+                        Background="Transparent"
+                        SizeChanged="PreviewContent_SizeChanged"
+                        PointerPressed="PreviewContent_PointerPressed"
+                        PointerMoved="PreviewContent_PointerMoved"
+                        PointerReleased="PreviewContent_PointerReleased"
+                        PointerCaptureLost="PreviewContent_PointerCaptureLost">
+
+                        <!-- Кадр в нативном размере (Stretch=Fill заполняет контент 1:1). -->
+                        <Image
+                            x:Name="FrameImageControl"
+                            Source="{Binding FrameImage}"
+                            Stretch="Fill"
+                            IsHitTestVisible="False" />
+
+                        <!-- Оверлей ROI-прямоугольников + рамка рисования. -->
+                        <Canvas
+                            x:Name="RoiOverlayCanvas"
+                            IsHitTestVisible="False" />
+                    </Grid>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Подсказка при отсутствии кадра (поверх, по центру) -->
+            <TextBlock
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                TextAlignment="Center"
+                IsHitTestVisible="False"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Visibility="{Binding FrameImage, Converter={StaticResource NullToVisibilityConverter}}"
+                Text="Кадр не захвачен.&#x0a;Нажмите «Захватить кадр», затем обведите область ROI мышью." />
+
+            <!-- Панель масштаба (поверх, сверху-справа) -->
+            <StackPanel
+                Orientation="Horizontal"
+                Spacing="4"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="0,6,14,0">
+                <Button
+                    Content="&#x2212;"
+                    Width="32"
+                    Height="32"
+                    AutomationProperties.Name="Уменьшить масштаб кадра"
+                    AutomationProperties.AutomationId="CalibrationZoomOutButton"
+                    ToolTipService.ToolTip="Уменьшить"
+                    Click="ZoomOut_Click" />
+                <Button
+                    Content="Вписать"
+                    Height="32"
+                    AutomationProperties.Name="Вписать кадр целиком"
+                    AutomationProperties.AutomationId="CalibrationZoomFitButton"
+                    ToolTipService.ToolTip="Вписать кадр целиком"
+                    Click="ZoomFit_Click" />
+                <Button
+                    Content="&#x2b;"
+                    Width="32"
+                    Height="32"
+                    AutomationProperties.Name="Увеличить масштаб кадра"
+                    AutomationProperties.AutomationId="CalibrationZoomInButton"
+                    ToolTipService.ToolTip="Увеличить"
+                    Click="ZoomIn_Click" />
+            </StackPanel>
+
+            <!-- Подсказка про управление масштабом (поверх, снизу-слева) -->
+            <Border
+                HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                Margin="8,0,0,8"
+                Padding="6,2"
+                CornerRadius="4"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                Visibility="{Binding FrameImage, Converter={StaticResource NullToVisibilityConverter}, ConverterParameter=Invert}">
                 <TextBlock
-                    Text="Кадр не захвачен. Запустите захват в T051."
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                    Visibility="{Binding FrameImage, Converter={StaticResource NullToVisibilityConverter}}" />
-
-                <!-- Оверлей ROI-прямоугольников.
-                     Прямоугольники перерисовываются в code-behind при SizeChanged
-                     и при изменении коллекции Calibrations. -->
-                <Canvas
-                    x:Name="RoiOverlayCanvas"
                     IsHitTestVisible="False"
-                    HorizontalAlignment="Stretch"
-                    VerticalAlignment="Stretch" />
-            </Grid>
-        </Border>
+                    FontSize="11"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="Ctrl+колесо — масштаб · колесо/полосы — прокрутка · ЛКМ-протяжка — рамка ROI" />
+            </Border>
+        </Grid>
 
         <!-- ── Строка 2: Разделитель ────────────────────────────────────────────── -->
         <Border
             Grid.Row="2"
             Height="1"
-            Background="{ThemeResource SystemControlForegroundBaseLowBrush}"
+            Background="{ThemeResource ControlFillColorSecondaryBrush}"
             Margin="0,4" />
 
         <!-- ── Строка 3: Список ROI + редактор ───────────────────────────────── -->
@@ -170,7 +251,7 @@
                                     <TextBlock
                                         Text="{Binding Source}"
                                         Style="{StaticResource CaptionTextBlockStyle}"
-                                        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}" />
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 </StackPanel>
 
                                 <Button
@@ -285,7 +366,7 @@
                     <TextBlock
                         Text="Координаты (нормализованные доли [0..1]):"
                         Style="{StaticResource CaptionTextBlockStyle}"
-                        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}" />
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
 
                     <Grid ColumnSpacing="8" RowSpacing="4">
                         <Grid.ColumnDefinitions>

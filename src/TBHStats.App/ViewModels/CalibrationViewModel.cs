@@ -2,9 +2,13 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
+using TBHStats.Capture;
+using TBHStats.Capture.Wgc;
 using TBHStats.Core.Mechanics;
 using TBHStats.Core.Models;
 using TBHStats.Data.Repositories;
+using Windows.Graphics.Imaging;
 
 namespace TBHStats.App.ViewModels;
 
@@ -18,6 +22,7 @@ public sealed partial class CalibrationViewModel : ObservableObject
 {
     private readonly ISettingsRepository _settings;
     private readonly IGameMechanics _gameMechanics;
+    private readonly ICaptureSession _captureSession;
 
     // ──────────────────────────────────────────────────────────────
     // Список ROI
@@ -53,12 +58,20 @@ public sealed partial class CalibrationViewModel : ObservableObject
     // ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Изображение захваченного кадра для предпросмотра.
-    /// Заполняется механизмом захвата в T051 / последующей итерации;
-    /// null означает отсутствие кадра (будет отображена заглушка).
+    /// Изображение захваченного кадра игры для предпросмотра.
+    /// Заполняется командой <see cref="CaptureFrameCommand"/> (снимок с <see cref="ICaptureSession"/>);
+    /// null означает, что кадр ещё не захвачен (отображается подсказка).
     /// </summary>
     [ObservableProperty]
     private ImageSource? _frameImage;
+
+    /// <summary>Ширина последнего захваченного кадра в пикселях (0 — кадра нет).</summary>
+    [ObservableProperty]
+    private int _frameWidthPx;
+
+    /// <summary>Высота последнего захваченного кадра в пикселях (0 — кадра нет).</summary>
+    [ObservableProperty]
+    private int _frameHeightPx;
 
     // ──────────────────────────────────────────────────────────────
     // Статус операции
@@ -81,10 +94,14 @@ public sealed partial class CalibrationViewModel : ObservableObject
     /// </summary>
     /// <param name="settings">Репозиторий настроек (загрузка / сохранение ROI).</param>
     /// <param name="gameMechanics">Конфиг механик (вкладки, FieldKey).</param>
-    public CalibrationViewModel(ISettingsRepository settings, IGameMechanics gameMechanics)
+    public CalibrationViewModel(
+        ISettingsRepository settings,
+        IGameMechanics gameMechanics,
+        ICaptureSession captureSession)
     {
         _settings = settings;
         _gameMechanics = gameMechanics;
+        _captureSession = captureSession;
 
         GameMechanicsConfig cfg = gameMechanics.Current;
 
@@ -127,6 +144,71 @@ public sealed partial class CalibrationViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = $"Ошибка загрузки: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Захватить текущий кадр игры и показать его в предпросмотре.
+    /// Вызывает <see cref="ICaptureSession.TryGetFrameAsync"/>; если окно игры не найдено
+    /// или свёрнуто — кадр будет null, выводится подсказка в <see cref="StatusMessage"/>.
+    /// Конвертация и установка <see cref="FrameImage"/> выполняются на UI-потоке (без ConfigureAwait(false)).
+    /// </summary>
+    [RelayCommand]
+    private async Task CaptureFrameAsync(CancellationToken ct)
+    {
+        IsBusy = true;
+        StatusMessage = string.Empty;
+
+        try
+        {
+            using CapturedFrame? frame = await _captureSession.TryGetFrameAsync(ct);
+            if (frame is null)
+            {
+                FrameImage = null;
+                FrameWidthPx = 0;
+                FrameHeightPx = 0;
+                StatusMessage = "Кадр недоступен: окно игры не найдено, свёрнуто или ещё не готово. " +
+                                "Откройте игру на нужной вкладке и повторите.";
+                return;
+            }
+
+            // SoftwareBitmapSource требует BGRA8 с premultiplied-альфой.
+            SoftwareBitmap source = frame.Bitmap;
+            SoftwareBitmap? converted = null;
+            if (source.BitmapPixelFormat != BitmapPixelFormat.Bgra8 ||
+                source.BitmapAlphaMode != BitmapAlphaMode.Premultiplied)
+            {
+                converted = SoftwareBitmap.Convert(source, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+                source = converted;
+            }
+
+            try
+            {
+                SoftwareBitmapSource imageSource = new();
+                await imageSource.SetBitmapAsync(source);  // копирует данные внутрь источника
+
+                FrameImage = imageSource;
+                FrameWidthPx = frame.Bitmap.PixelWidth;
+                FrameHeightPx = frame.Bitmap.PixelHeight;
+                StatusMessage = $"Кадр захвачен ({FrameWidthPx}×{FrameHeightPx}). " +
+                                "Выберите ROI и обведите область мышью по кадру.";
+            }
+            finally
+            {
+                converted?.Dispose();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // отмена — нормальный выход
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Ошибка захвата кадра: {ex.Message}";
         }
         finally
         {

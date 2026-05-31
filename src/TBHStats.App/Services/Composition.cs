@@ -113,7 +113,8 @@ public static class Composition
         services.AddTransient<CalibrationViewModel>(sp =>
             new CalibrationViewModel(
                 new ScopedSettingsRepositoryProxy(sp),
-                sp.GetRequiredService<IGameMechanics>()));
+                sp.GetRequiredService<IGameMechanics>(),
+                sp.GetRequiredService<ICaptureSession>()));
 
         // StatsOrchestrator: singleton, зависит от сингтонов Capture/Core и scoped Data.
         // Scoped ISettingsRepository доступен через IServiceScopeFactory внутри петли

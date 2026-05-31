@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "TBHStats.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "TBHStats.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

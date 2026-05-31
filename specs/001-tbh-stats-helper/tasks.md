@@ -28,12 +28,54 @@ tests/TBHStats.Core.Tests   tests/TBHStats.Capture.Tests   tests/TBHStats.Data.T
 
 **Purpose**: подготовка к реализации — анализ, создание агентов, назначение исполнителей.
 
-- [ ] P001 Проанализировать все задачи и определить нужные типы агентов. Кандидаты (в реестре нет C#/.NET-агентов — почти всё FUTURE): `dotnet-winui-developer` (WinUI3/MVVM/App), `windows-capture-ocr-specialist` (WGC+Windows.Media.Ocr+ROI+детекция вкладки), `efcore-sqlite-specialist` (EF Core/миграции/репозитории), `dotnet-test-writer` (xUnit/FluentAssertions; существующий `test-writer` заточен под Vitest — не подходит), `dotnet-uiautomation-specialist` (FlaUI + SendInput + визуальная локализация для Phase 7 QA-харнесса). Тривиальные — MAIN.
-- [ ] P002 Создать недостающих агентов через `meta-agent-v3` (запустить N вызовов в одном сообщении, 1 на агента), затем попросить пользователя перезапустить claude-code.
-- [ ] P003 Назначить исполнителей всем задачам: MAIN (только тривиальные), существующие агенты (100% совпадение), либо конкретные новые агенты. Аннотировать `[EXECUTOR: name]`, `[SEQUENTIAL]`/`[PARALLEL-GROUP-X]`.
-- [ ] P004 Разрешить research-задачи: simple — решить инструментами сейчас; complex — создать промпт в `research/`. Единственный эмпирический риск (точность OCR на шрифте TBH) проверяется в T050 на реальных скриншотах, отдельного research-промпта не требует.
+- [X] P001 Проанализировать все задачи и определить нужные типы агентов. Кандидаты (в реестре нет C#/.NET-агентов — почти всё FUTURE): `dotnet-winui-developer` (WinUI3/MVVM/App), `windows-capture-ocr-specialist` (WGC+Windows.Media.Ocr+ROI+детекция вкладки), `efcore-sqlite-specialist` (EF Core/миграции/репозитории), `dotnet-test-writer` (xUnit/FluentAssertions; существующий `test-writer` заточен под Vitest — не подходит), `dotnet-uiautomation-specialist` (FlaUI + SendInput + визуальная локализация для Phase 7 QA-харнесса). Тривиальные — MAIN.
+- [X] P002 Создать недостающих агентов через команду `/create agent` (внутри — `meta-agent-v3` + `prompt-guidance-audit`), затем попросить пользователя перезапустить claude-code. **Создано 5/5, все PASS**: `dotnet-winui-developer`, `windows-capture-ocr-specialist`, `efcore-sqlite-specialist` (development/workers); `dotnet-test-writer`, `dotnet-uiautomation-specialist` (testing/workers). ⏳ Требуется рестарт claude-code для регистрации.
+- [X] P003 Назначить исполнителей всем задачам (см. карту ниже).
+- [X] P004 Разрешить research-задачи: открытых нет. Единственный эмпирический риск (точность OCR на шрифте TBH) проверяется в T049 на реальных скриншотах — отдельного research-промпта не требует.
 
-**Rules**: MAIN — только тривиальные правки; новые агенты — через meta-agent-v3 в одном сообщении; после P002 обязателен рестарт.
+**Rules**: MAIN — только тривиальные правки; новые агенты создаются через `/create agent`; после P002 обязателен рестарт.
+
+### Карта исполнителей (P003)
+
+Сокращения: **WINUI** = `dotnet-winui-developer` (Core-домен + App/WinUI), **CAP** = `windows-capture-ocr-specialist` (TBHStats.Capture), **DATA** = `efcore-sqlite-specialist` (TBHStats.Data), **TEST** = `dotnet-test-writer` (xUnit/FluentAssertions), **UIA** = `dotnet-uiautomation-specialist` (TBHStats.UiTests), **MAIN** = главная сессия (тривиальное).
+
+| Задача | Executor | Параллельность |
+|--------|----------|----------------|
+| T001 | WINUI | SEQUENTIAL (блокирует Setup) |
+| T002, T004 | WINUI | [P] после T001 |
+| T003 | MAIN (config) | [P] после T001 |
+| T005, T006, T007, T008 | WINUI (Core) | T005/T006/T008 [P]; T007 после T006 |
+| T009→T010 | DATA | SEQUENTIAL |
+| T011 | DATA | [P] |
+| T012→T013 | CAP | T013 после T012 |
+| T014, T015 | CAP | [P] |
+| T016, T017, T018 | TEST | [P] |
+| T019, T020, T021 | TEST | [P] (до реализации US1) |
+| T022 | CAP | [P] |
+| T023 | CAP | после T022/T014/T015 |
+| T024, T025 | WINUI (Core) | T024 после T008 |
+| T026 | WINUI (App) | после T013/T023/T024/T025 |
+| T027 | DATA | после T011 |
+| T028, T029, T030, T031 | WINUI (App) | по зависимостям |
+| T032, T033, T034 | TEST | [P] |
+| T035 | CAP | после T023 |
+| T036 | WINUI (App) | после T035/T026 |
+| T037, T038 | DATA | после T011/T009 |
+| T039 | WINUI (Core) | — |
+| T040, T041, T042 | WINUI (App) | по зависимостям |
+| T043 | TEST | [P] |
+| T044 | DATA | после T037 |
+| T045, T046 | WINUI (App) | после T002/T044 |
+| T047, T048, T052, T053 | WINUI | [P] |
+| T049, T054 | TEST | [P] |
+| T050 | MAIN (docs) | [P] |
+| T051 | MAIN + WINUI | acceptance-smoke (нужна игра+SDK) |
+| T055, T056 | UIA | [P] |
+| T057 | UIA | после T055/T014/T022 |
+| T058 | UIA | после T057 |
+| T059 | UIA | после T056/T057/T058 |
+| T060 | UIA | после T059/T026 |
+| T061 | UIA | после T060 |
 
 ---
 
@@ -41,10 +83,10 @@ tests/TBHStats.Core.Tests   tests/TBHStats.Capture.Tests   tests/TBHStats.Data.T
 
 **Purpose**: инициализация .NET-решения и базовой инфраструктуры.
 
-- [ ] T001 Создать решение `TBHStats.sln` и скелет проектов (Core, Capture, Data, App + tests/*) с TFM `net8.0-windows10.0.22621.0`, `<Nullable>enable</Nullable>`, включёнными анализаторами — в корне репозитория `G:\Project-X\TBHStats`. Проект `TBHStats.Remote` — future-заглушка, в v1 НЕ создаётся (см. plan.md «Structure», FR-020)
-- [ ] T002 [P] Подключить NuGet-зависимости по проектам: `Microsoft.EntityFrameworkCore.Sqlite` (Data), `CommunityToolkit.Mvvm` + `Microsoft.WindowsAppSDK` + `LiveChartsCore.SkiaSharpView.WinUI` (App), CsWinRT/`Microsoft.Windows.SDK.Net.Ref` (Capture), `xunit` + `FluentAssertions` (tests/*) — в соответствующих `.csproj`
-- [ ] T003 [P] Настроить `.editorconfig` + анализаторы (nullability warnings-as-errors для Core/Data), запрет `dynamic`, стиль — в корне репозитория
-- [ ] T004 [P] Настроить DI-контейнер и `Microsoft.Extensions.Logging` (composition root) в `src/TBHStats.App/Services/Composition.cs`
+- [X] T001 Создать решение `TBHStats.sln` и скелет проектов (Core, Capture, Data, App + tests/*) с TFM `net8.0-windows10.0.22621.0`, `<Nullable>enable</Nullable>`, включёнными анализаторами — в корне репозитория `G:\Project-X\TBHStats`. Проект `TBHStats.Remote` — future-заглушка, в v1 НЕ создаётся (см. plan.md «Structure», FR-020)
+- [X] T002 [P] Подключить NuGet-зависимости по проектам: `Microsoft.EntityFrameworkCore.Sqlite` (Data), `CommunityToolkit.Mvvm` + `Microsoft.WindowsAppSDK` + `LiveChartsCore.SkiaSharpView.WinUI` (App), CsWinRT/`Microsoft.Windows.SDK.Net.Ref` (Capture), `xunit` + `FluentAssertions` (tests/*) — в соответствующих `.csproj`
+- [X] T003 [P] Настроить `.editorconfig` + анализаторы (nullability warnings-as-errors для Core/Data), запрет `dynamic`, стиль — в корне репозитория
+- [X] T004 [P] Настроить DI-контейнер и `Microsoft.Extensions.Logging` (composition root) в `src/TBHStats.App/Services/Composition.cs`
 
 ---
 

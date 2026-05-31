@@ -1,0 +1,27 @@
+<Project>
+
+  <!--
+    Общие свойства сборки для всех проектов TBHStats (T003 / Phase 1 Setup).
+
+    TargetFramework здесь НЕ задаётся намеренно: проекты используют разные TFM
+    (net8.0 — Core/Data/тесты; net8.0-windows10.0.19041.0 — Capture/App),
+    поэтому фреймворк объявляется в каждом .csproj.
+
+    Свойства из Directory.Build.props импортируются ДО тела .csproj,
+    поэтому проектные значения при необходимости переопределяют эти.
+  -->
+  <PropertyGroup>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <!-- Warnings as errors только для доменного ядра и слоя данных (требование T003). -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TBHStats.Core' Or '$(MSBuildProjectName)' == 'TBHStats.Data'">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

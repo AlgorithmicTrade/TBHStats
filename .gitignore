@@ -18,3 +18,22 @@ Thumbs.db
 # Secrets
 .env
 .env.local
+
+# .NET build artifacts
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+*.user
+*.suo
+.vs/
+# WinUI / MSIX
+[Aa]pp[Pp]ackages/
+*.appx
+*.msix
+*.msixbundle
+BundleArtifacts/
+GeneratedArtifacts/
+# Тестовые/временные артефакты
+[Tt]est[Rr]esults/
+.verify.log
+.tmp_*

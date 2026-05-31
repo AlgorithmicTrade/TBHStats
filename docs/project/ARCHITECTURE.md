@@ -2,7 +2,7 @@
 
 **Проект**: TBHStats — десктоп-помощник по статистике для игры Task Bar Hero
 **Платформа**: Windows 11 (x64/arm64), один локальный пользователь
-**Дата актуализации**: 2026-05-31 (T008/T015)
+**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010)
 **Спецификация-источник**: `specs/001-tbh-stats-helper/` (plan, research, data-model, contracts) · конституция `v2.2.0`
 
 > TBHStats наблюдает за окном запущенной игры, **визуально** считывает игровые показатели (золото, опыт, время этапа, класс/уровень/урон героя, текущий этап, сундуки по типам), вычисляет темпы (золото/час, опыт/час, сундуки/час), накапливает историю по 60 этапам (3 акта × 2 сложности × 10) и рекомендует оптимальный этап для фарма. Режим строго **observe-only**: никаких записей в память игры и инъекций ввода.
@@ -68,6 +68,18 @@
 
 **Отклонено**: BitBlt со скриншота экрана (ломается при перекрытии, привязан к экрану) и DXGI Desktop Duplication (весь монитор, не окно).
 
+**Реализация (T013):** `ICaptureSession` + `CaptureSession` в `TBHStats.Capture/Wgc/`:
+- `ICaptureSession` (IAsyncDisposable) — `CaptureState State`, `event Action<CaptureState> StateChanged`, `Task<CapturedFrame?> TryGetFrameAsync(CancellationToken)`.
+- `CaptureSession` — реальный WGC-pipeline без заглушек:
+  - `Direct3D11Interop.CreateDevice()`: `D3D11CreateDevice` (d3d11.dll, `D3D11_DRIVER_TYPE_HARDWARE`, флаг `BGRA_SUPPORT`) → QI до `IDXGIDevice` → `CreateDirect3D11DeviceFromDXGIDevice` → WinRT-обёртка `IDirect3DDevice`.
+  - `GraphicsCaptureItemInterop.CreateForWindow(hwnd)`: `RoGetActivationFactory("Windows.Graphics.Capture.GraphicsCaptureItem")` → QI до `IGraphicsCaptureItemInterop` (GUID `3628E81B-...`) → `CreateForWindow` → `GraphicsCaptureItem`.
+  - `Direct3D11CaptureFramePool.CreateFreeThreaded(device, B8G8R8A8UIntNormalized, 2, size)` — не требует UI-диспетчера, безопасен для фоновых циклов.
+  - `GraphicsCaptureSession.StartCapture()` с опциональным `IsBorderRequired = false` (Windows 11 SDK 22621+; игнорируется при недоступности).
+  - При ресайзе окна — `framePool.Recreate(...)`.
+  - Кадр: `framePool.TryGetNextFrame()` → `SoftwareBitmap.CreateCopyFromSurfaceAsync(surface)` → `CapturedFrame`.
+- **Машина состояний** управляется в `TryGetFrameAsync`: `GetVisibility` → `Closed`/`Minimized` → `NotFound`/`Waiting` + освобождение ресурсов или сохранение (ожидание восстановления); `Visible` → инициализировать pipeline (lazy) → `Capturing`. При смене состояния — `StateChanged?.Invoke(newState)`.
+- Concurrency: все операции под `SemaphoreSlim(1,1)`. `DisposeAsync` ожидает семафор перед очисткой.
+
 ---
 
 ## 3. OCR
@@ -79,6 +91,16 @@
 - **Tesseract** настраивается под цифры через whitelist (`tessedit_char_whitelist=0123456789.,KMB`); per-ROI выбор движка задаётся в калибровке (`RoiCalibration.OcrEngine`).
 
 **Эмпирический риск**: фактическая точность на конкретном шрифте Task Bar Hero — открытый вопрос, **проверяется на реальных скриншотах** (фикстуры в `TBHStats.Capture.Tests`). Митигация: confidence-порог + sanity-проверки значений + fallback-движок per ROI.
+
+**Реализация (T014):**
+- `CapturedFrame` (sealed, IDisposable) — общий тип кадра слоя: `SoftwareBitmap Bitmap`, `SizePx ClientSize`, `DateTimeOffset TimestampUtc`. Возвращается `ICaptureSession`, потребляется OCR/детектором/экстрактором. `Dispose()` освобождает `Bitmap`.
+- `OcrResult` (readonly record struct) — `(string RawText, double Confidence, bool Recognized)`.
+- `IOcrReader` — `Task<OcrResult> ReadAsync(CapturedFrame, RoiCalibration, CancellationToken)`.
+- `OcrReader` — реальная реализация:
+  - Lazy-init `WinOcrEngine` (`TryCreateFromUserProfileLanguages` → fallback `TryCreateFromLanguage("en")`). Если оба null — возвращает `OcrResult("", 0, false)` без исключения.
+  - Кроп `SoftwareBitmap` к ROI через `BitmapEncoder` (BMP, in-memory stream) + `BitmapDecoder` с `BitmapTransform.Bounds` — извлекает суб-регион без ручного попиксельного копирования. Конвертация к `Bgra8/Premultiplied` через `SoftwareBitmap.Convert` при необходимости.
+  - **Confidence-эвристика**: `∑(wordBoundsArea) / roiArea`, clamp [0..1]. Windows.Media.Ocr не возвращает числовую confidence per-word, поэтому геометрическое покрытие служит прокси достоверности.
+  - Возвращает `OcrResult("", 0, false)` при: недоступном движке, пустом ROI, ошибке отмены (кроме `OperationCanceledException`, который пробрасывается).
 
 ---
 
@@ -121,6 +143,68 @@
 - **Тесты на реальном временном SQLite-файле** (не in-memory-мок БД) — чтобы проверять реальную SQL-семантику.
 
 Отклонены: LiteDB (слабее по миграциям/агрегации) и сырой JSON (нет индексов/конкурентной записи).
+
+### DbContext и конфигурации (реализовано в T009)
+
+`TbhStatsDbContext` в `src/TBHStats.Data/TbhStatsDbContext.cs`:
+- Конструктор `(DbContextOptions<TbhStatsDbContext>)` для DI; строка подключения задаётся снаружи (T010).
+- `ApplyConfigurationsFromAssembly` — все `IEntityTypeConfiguration<T>` применяются автоматически.
+- `DbSet<>` для всех агрегатных корней: `ChestTypes`, `HeroClasses`, `Tabs`, `Acts`, `Difficulties`, `Stages`, `StageRuns`, `StageRunChests`, `MetricSamples`, `MetricSampleChests`, `StageAggregates`, `RoiCalibrations`, `WidgetSettings`, `OptimizationProfiles`.
+
+Конфигурации в `src/TBHStats.Data/Entities/`:
+
+| Файл | Ключевые правила маппинга |
+|------|--------------------------|
+| `ChestTypeConfiguration` | уникальный индекс по `Key` |
+| `HeroClassConfiguration` | уникальный индекс по `Key` |
+| `TabConfiguration` | уникальный индекс по `Key` |
+| `ActConfiguration` | — |
+| `DifficultyConfiguration` | уникальный индекс по `Key` |
+| `StageConfiguration` | уникальный составной индекс `(ActId, DifficultyId, Number)` |
+| `StageRunConfiguration` | `OwnsOne(Hero)` — owned `HeroSnapshot`; `Ignore(GoldPerHour/XpPerHour)` |
+| `StageRunChestConfiguration` | составной PK `(StageRunId, ChestTypeId)` |
+| `MetricSampleConfiguration` | `NextLocation` (`StageRef?`) → TEXT через `ValueConverter` (`«ActNumber/DifficultyKey/StageNumber»` или NULL) |
+| `MetricSampleChestConfiguration` | составной PK `(MetricSampleId, ChestTypeId)` |
+| `StageAggregateConfiguration` | PK = FK → Stage (1:1) |
+| `StageAggregateChestRateConfiguration` | составной PK `(StageId, ChestTypeId)` |
+| `RoiCalibrationConfiguration` | `Source` и `OcrEngine` как `int`; nullable FK → Tab |
+| `WidgetSettingsConfiguration` | синглтон, shadow PK `Id`; `Theme` как `int` |
+| `OptimizationProfileConfiguration` | синглтон, shadow PK `Id`; `SelectedMetric` как `int` |
+
+**Особые решения маппинга:**
+
+- `HeroSnapshot` — `sealed record` с guard-валидацией в `init`. Использован `OwnsOne` с явным `Property()`-маппингом каждого поля (`Hero_HeroClassId`, `Hero_Level`, `Hero_Damage`). EF материализует owned entity через reflection, минуя primary constructor — guard не срабатывает при чтении из БД.
+- `StageRef?` — `readonly record struct` с guard-валидацией. Использован `HasConversion<StageRef?, string?>` (ValueConverter). Хранится в одной TEXT-колонке `NextLocation`. При NULL в колонке свойство остаётся `null`; при парсе вызывается конструктор с корректными значениями — guard отрабатывает штатно.
+- `WidgetSettings` / `OptimizationProfile` — синглтоны без PK в доменной модели. Shadow PK `Id` (int, auto-increment) добавляется через `builder.Property<int>("Id").ValueGeneratedOnAdd()`.
+- Все enum-поля (`FieldSource`, `OcrEngine`, `Theme`, `OptimizationMetric`) хранятся как `int` (явный `.HasConversion<int>()`).
+
+### Миграции и bootstrap (реализовано в T010)
+
+Файлы в `src/TBHStats.Data/`:
+
+| Файл | Назначение |
+|------|-----------|
+| `DesignTimeDbContextFactory.cs` | `IDesignTimeDbContextFactory<TbhStatsDbContext>` — создаёт контекст с `:memory:` для `dotnet ef migrations add`; рантайм не использует |
+| `Migrations/20260531133324_InitialCreate.cs` | Первичная миграция: создаёт все 15 таблиц, FK, уникальные индексы (в т.ч. `IX_Stages_ActId_DifficultyId_Number`) |
+| `Migrations/TbhStatsDbContextModelSnapshot.cs` | Снимок модели EF Core для сравнения при `migrations add` |
+| `DatabaseInitializer.cs` | Bootstrap-сервис; `static` класс с методами: `GetDbPath()`, `GetConnectionString(dbPath)`, `ConfigureSqlite(optionsBuilder, dbPath)`, `InitializeAsync(db, ct)` |
+
+**Путь к БД**: `DatabaseInitializer.GetDbPath()` возвращает `%LOCALAPPDATA%\TBHStats\tbhstats.db`; директория создаётся при первом вызове.
+
+**`InitializeAsync` порядок операций**:
+1. `db.Database.MigrateAsync(ct)` — применить все ожидающие миграции.
+2. Идемпотентный сидинг справочников (проверка `AnyAsync()` перед вставкой): `ChestTypes` (3), `Tabs` (9), `Acts` (3), `Difficulties` (2), `Stages` (60 = 3×2×10), `HeroClasses` (пустой по умолчанию — открываются динамически).
+3. Сидинг `RoiCalibrations` (14 дефолтных Field Source Bindings из `GameMechanicsConfig.CreateDefault()` с нулевыми координатами — пользователь калибрует через UI).
+4. Сидинг синглтонов `WidgetSettings` и `OptimizationProfile` (если отсутствуют).
+
+**Composition root** (TBHStats.App) регистрирует контекст так:
+```csharp
+string dbPath = DatabaseInitializer.GetDbPath();
+services.AddDbContext<TbhStatsDbContext>(opt =>
+    DatabaseInitializer.ConfigureSqlite(opt, dbPath));
+// При старте:
+await DatabaseInitializer.InitializeAsync(db, ct);
+```
 
 ---
 
@@ -249,8 +333,8 @@ Capturing ──(низкая уверенность OCR)───────�
   - Вспомогательные типы: `GameWindowHandle` (HWND + PID + заголовок), `SizePx` (ширина × высота клиентской области).
   - `GetVisibility`: `!IsWindow` → `Closed`; `IsIconic` → `Minimized`; иначе → `Visible`. Перекрытие НЕ влияет на статус.
   - `GetClientSize`: `GetClientRect` → `SizePx`; невалидный HWND → `SizePx.Empty` (0×0), без исключения.
-- `ICaptureSession` — кадры окна и `CaptureState` (FR-005).
-- `IOcrReader` — распознавание значения из нормализованной ROI (FR-002/003).
+- `ICaptureSession` / `CaptureSession` — кадры окна и `CaptureState` (FR-005). Возвращает `CapturedFrame?` — общий тип кадра (`SoftwareBitmap` + `SizePx` + timestamp), потребляемый OCR/детектором/экстрактором. Реализует `IAsyncDisposable`. Файлы: `Wgc/ICaptureSession.cs`, `Wgc/CaptureSession.cs`, `Wgc/Direct3D11Interop.cs`, `Wgc/GraphicsCaptureItemInterop.cs`.
+- `IOcrReader` / `OcrReader` — распознавание значения из нормализованной ROI (FR-002/003). Кроп через `BitmapEncoder/Decoder + BitmapBounds`; confidence = геометрическое покрытие слов в ROI (см. §3).
 - `ITabDetector` — распознавание активной вкладки (FR-002a).
 - `IFieldExtractor` — кадр → набор доступных сырых значений по активной вкладке (FR-002b).
 

@@ -77,3 +77,10 @@ Optional, git-backed (`bd` CLI). `.beads-templates/` holds the config/formulas/P
 - **New command** → `commands/{name}.md`; follow the existing health/speckit structure and reference plan-file/quality-gate skills rather than re-implementing them.
 - Counts referenced in `README.md` / `package.json` description (agents/skills/commands) are maintained by hand — update them when adding or removing assets.
 - MCP servers are defined in `.mcp.json` (context7, sequential-thinking, supabase, playwright, shadcn, serena); Supabase uses `${SUPABASE_PROJECT_REF}` / `${SUPABASE_ACCESS_TOKEN}` env vars. `npm run setup` switches between configs.
+
+## Active Technologies
+- C# 12 / .NET 8 (LTS) (001-tbh-stats-helper)
+- локальный файл SQLite (`%LOCALAPPDATA%\TBHStats\tbhstats.db`) (001-tbh-stats-helper)
+
+## Recent Changes
+- 001-tbh-stats-helper: Added C# 12 / .NET 8 (LTS)

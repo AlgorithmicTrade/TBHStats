@@ -1,0 +1,121 @@
+openapi: 3.0.3
+info:
+  title: TBHStats Remote API (FUTURE — out of scope for v1)
+  version: 0.0.1-draft
+  description: >
+    Задел под удалённый просмотр статистики Android-клиентом (FR-020).
+    В v1 НЕ реализуется. Зафиксирован, чтобы модель данных и слой Data
+    проектировались пригодными к удалённой выдаче. Сервер — локальный
+    (localhost/LAN), аутентификация — парный токен (см. конституцию, Security).
+servers:
+  - url: http://127.0.0.1:8787
+    description: Локальный сервер на машине с игрой (по умолчанию только loopback/LAN)
+security:
+  - PairedToken: []
+components:
+  securitySchemes:
+    PairedToken:
+      type: http
+      scheme: bearer
+      description: Токен, выданный при сопряжении устройства (pairing). Без него доступ запрещён.
+  schemas:
+    LiveStats:
+      type: object
+      properties:
+        captureState: { type: string, enum: [NotFound, Capturing, Waiting] }
+        stageId: { $ref: '#/components/schemas/StageRef' }
+        goldPerHour: { type: number }
+        xpPerHour: { type: number }
+        chestPerHour:
+          type: object
+          additionalProperties: { type: number }
+        hero:
+          type: object
+          properties:
+            class: { type: string }
+            level: { type: integer }
+            damage: { type: integer, format: int64 }
+        lastReliableAtUtc: { type: string, format: date-time }
+    StageRef:
+      type: object
+      properties:
+        act: { type: integer }
+        difficulty: { type: string }
+        number: { type: integer }
+    StageAggregate:
+      type: object
+      properties:
+        stage: { $ref: '#/components/schemas/StageRef' }
+        runCount: { type: integer }
+        avgGoldPerHour: { type: number }
+        bestGoldPerHour: { type: number }
+        avgXpPerHour: { type: number }
+        bestXpPerHour: { type: number }
+        avgDurationSeconds: { type: number }
+        chestRatePerHour:
+          type: object
+          additionalProperties: { type: number }
+    Recommendation:
+      type: object
+      properties:
+        metric: { type: string, enum: [GoldPerHour, XpPerHour] }
+        stage: { $ref: '#/components/schemas/StageRef' }
+        reason: { type: string }
+paths:
+  /api/live:
+    get:
+      summary: Текущие живые показатели (P1)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LiveStats' }
+        '401': { description: Unauthorized (нет/неверный парный токен) }
+  /api/stages:
+    get:
+      summary: Агрегаты по всем этапам для сравнения (P2)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StageAggregate' }
+  /api/recommendation:
+    get:
+      summary: Рекомендованный этап для фарма (P2)
+      parameters:
+        - in: query
+          name: metric
+          schema: { type: string, enum: [GoldPerHour, XpPerHour] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Recommendation' }
+  /api/stages/{act}/{difficulty}/{number}/samples:
+    get:
+      summary: Точки трендов по этапу для графиков (P3, US3)
+      parameters:
+        - { in: path, name: act, required: true, schema: { type: integer } }
+        - { in: path, name: difficulty, required: true, schema: { type: string } }
+        - { in: path, name: number, required: true, schema: { type: integer } }
+        - { in: query, name: fromUtc, schema: { type: string, format: date-time } }
+        - { in: query, name: toUtc, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    takenAtUtc: { type: string, format: date-time }
+                    goldPerHour: { type: number }
+                    xpPerHour: { type: number }
+                    durationSeconds: { type: integer }

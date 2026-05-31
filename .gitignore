@@ -1,0 +1,20 @@
+# Вложенный orchestrator-kit ведёт собственную историю в отдельном репозитории
+# (maslennikov-ig/claude-code-orchestrator-kit) — не версионируем его здесь.
+claude-code-orchestrator-kit/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Logs / temp
+.tmp/
+*.log
+
+# Secrets
+.env
+.env.local

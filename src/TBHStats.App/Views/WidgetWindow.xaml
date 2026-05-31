@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Window
+    x:Class="TBHStats_App.Views.WidgetWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:conv="using:TBHStats_App.Views.Converters"
+    Title="TBHStats"
+    mc:Ignorable="d">
+
+    <Grid
+        x:Name="RootGrid"
+        Padding="12,10,12,12"
+        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+        <Grid.Resources>
+            <conv:BoolNegationConverter     x:Key="BoolNegationConverter" />
+            <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        </Grid.Resources>
+
+        <Grid.RowDefinitions>
+            <!-- Строка 0: плашка статуса (видима только когда нет данных) -->
+            <RowDefinition Height="Auto" />
+            <!-- Строка 1: основная статистика -->
+            <RowDefinition Height="*" />
+            <!-- Строка 2: кнопки -->
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ── Строка 0: Статус-плашка ─────────────────────────────────────── -->
+
+        <!-- Игра не найдена -->
+        <Border
+            Grid.Row="0"
+            Background="{ThemeResource SystemFillColorCriticalBackgroundBrush}"
+            CornerRadius="4"
+            Padding="8,4"
+            Margin="0,0,0,8"
+            Visibility="{Binding IsGameFound, Converter={StaticResource BoolNegationConverter},
+                                  ConverterParameter=Visibility}">
+            <TextBlock
+                Text="Игра не найдена"
+                Foreground="{ThemeResource SystemFillColorCriticalForegroundBrush}"
+                FontWeight="SemiBold"
+                HorizontalAlignment="Center" />
+        </Border>
+
+        <!-- Ожидание -->
+        <Border
+            Grid.Row="0"
+            Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
+            CornerRadius="4"
+            Padding="8,4"
+            Margin="0,0,0,8"
+            Visibility="{Binding IsWaiting, Converter={StaticResource BoolToVisibilityConverter}}">
+            <TextBlock
+                Text="Ожидание"
+                Foreground="{ThemeResource SystemFillColorCautionForegroundBrush}"
+                FontWeight="SemiBold"
+                HorizontalAlignment="Center" />
+        </Border>
+
+        <!-- ── Строка 1: Живая статистика ─────────────────────────────────── -->
+        <Grid Grid.Row="1" RowSpacing="6">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Золото/час -->
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="Золото/ч"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    VerticalAlignment="Center" />
+                <TextBlock
+                    Grid.Column="1"
+                    Text="{Binding GoldPerHourText}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    FontWeight="SemiBold"
+                    VerticalAlignment="Center" />
+            </Grid>
+
+            <!-- Опыт/час -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="Опыт/ч"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    VerticalAlignment="Center" />
+                <TextBlock
+                    Grid.Column="1"
+                    Text="{Binding XpPerHourText}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    FontWeight="SemiBold"
+                    VerticalAlignment="Center" />
+            </Grid>
+
+            <!-- Сундуки/час -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="Сундуки/ч"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    VerticalAlignment="Center" />
+                <TextBlock
+                    Grid.Column="1"
+                    Text="{Binding ChestsPerHourText}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    VerticalAlignment="Center" />
+            </Grid>
+
+            <!-- Герой -->
+            <Grid Grid.Row="3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="Герой"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    VerticalAlignment="Center" />
+                <StackPanel
+                    Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="4">
+                    <TextBlock
+                        Text="{Binding HeroClassText}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        VerticalAlignment="Center" />
+                    <TextBlock
+                        Text="{Binding HeroLevelText}"
+                        Style="{StaticResource BodyTextBlockStyle}"
+                        FontWeight="SemiBold"
+                        VerticalAlignment="Center" />
+                    <TextBlock
+                        Text="{Binding HeroDamageText}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                        VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Этап + золото -->
+            <Grid Grid.Row="4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="Этап"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    VerticalAlignment="Center" />
+                <StackPanel
+                    Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <TextBlock
+                        Text="{Binding StageText}"
+                        Style="{StaticResource BodyTextBlockStyle}"
+                        VerticalAlignment="Center" />
+                    <TextBlock
+                        Text="{Binding GoldText}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                        VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Статус + время обновления (устаревание) -->
+            <Grid Grid.Row="5" Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="{Binding StatusText}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    VerticalAlignment="Center" />
+                <TextBlock
+                    Grid.Column="1"
+                    Text="{Binding LastUpdateText}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    Opacity="{Binding IsStale, Converter={StaticResource BoolToVisibilityConverter}}"
+                    VerticalAlignment="Center" />
+            </Grid>
+        </Grid>
+
+        <!-- ── Строка 2: Кнопки ────────────────────────────────────────────── -->
+        <Button
+            Grid.Row="2"
+            Content="Калибровка"
+            HorizontalAlignment="Right"
+            Margin="0,8,0,0"
+            Click="OnCalibrationClicked" />
+
+    </Grid>
+</Window>

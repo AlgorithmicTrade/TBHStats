@@ -3,6 +3,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using TBHStats.App.Services;
+using TBHStats.App.ViewModels;
+using TBHStats.Data;
+using TBHStats_App.Views;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -51,8 +54,47 @@ public partial class App : Application
     /// <param name="args">Details about the launch request and process.</param>
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _window = new MainWindow();
+        // WinUI требует активировать окно синхронно в OnLaunched.
+        // Создаём виджет и активируем немедленно; init БД + старт оркестратора — асинхронно после.
+        _window = new WidgetWindow();
         _window.Activate();
+
+        // Фоновая инициализация: миграции БД + сидинг + старт оркестратора.
+        _ = InitializeAsync();
+    }
+
+    /// <summary>
+    /// Инициализирует БД (миграции + сидинг) и запускает фоновый оркестратор.
+    /// Вызывается асинхронно после активации WidgetWindow.
+    /// </summary>
+    private static async Task InitializeAsync()
+    {
+        ILogger<App> logger = Services.GetRequiredService<ILogger<App>>();
+
+        // 1. Применить миграции EF Core и сидинг игровых механик.
+        try
+        {
+            await using AsyncServiceScope scope = Services.CreateAsyncScope();
+            TbhStatsDbContext db = scope.ServiceProvider.GetRequiredService<TbhStatsDbContext>();
+            await DatabaseInitializer.InitializeAsync(db).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Ошибка инициализации базы данных.");
+        }
+
+        // 2. Запустить фоновую петлю оркестратора.
+        try
+        {
+            await Services
+                .GetRequiredService<IStatsOrchestrator>()
+                .StartAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Ошибка запуска StatsOrchestrator.");
+        }
     }
 
     /// <summary>

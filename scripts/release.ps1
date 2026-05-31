@@ -55,6 +55,17 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# === Кодировка ===
+# Гарантируем UTF-8 при выводе и при чтении stdout нативных команд (git).
+# Без этого кириллица из commit-сообщений ломается: PowerShell декодирует
+# UTF-8-байты git в OEM-кодировке консоли (cp866/cp1251). Setter [Console]
+# может бросать при перенаправленном выводе (нет реальной консоли) — оборачиваем.
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+try {
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    [Console]::InputEncoding  = [System.Text.UTF8Encoding]::new($false)
+} catch { }   # headless/redirected — не критично, чтение git идёт через Invoke-GitUtf8
+
 # === Пути и константы ===
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $PropsFile = Join-Path $ProjectRoot 'Directory.Build.props'
@@ -79,6 +90,25 @@ function Set-FileContentUtf8 {
     param([string]$Path, [string]$Content)
     $enc = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($Path, $Content, $enc)
+}
+
+# Запуск git с детерминированным чтением stdout как UTF-8 (не зависит от
+# кодировки консоли и работает при перенаправленном выводе). Возвращает строки.
+function Invoke-GitUtf8 {
+    param([string[]]$GitArgs)
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = 'git'
+    foreach ($a in $GitArgs) { [void]$psi.ArgumentList.Add($a) }
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $psi.UseShellExecute        = $false
+    $psi.WorkingDirectory       = $ProjectRoot
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $out = $p.StandardOutput.ReadToEnd()
+    [void]$p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+    return ($out -split "`r?`n")
 }
 
 function Backup-File {
@@ -161,8 +191,8 @@ function Set-PropsVersion {
 function Get-CommitsSince {
     param([string]$LastTag)
     $range = if ($LastTag) { "$LastTag..HEAD" } else { 'HEAD' }
-    # %h<TAB>%s
-    $lines = git log --format='%h%x09%s' $range 2>$null
+    # %h<TAB>%s — читаем через Invoke-GitUtf8 (детерминированный UTF-8, иначе кириллица ломается)
+    $lines = Invoke-GitUtf8 @('log', '--format=%h%x09%s', $range)
     return @($lines | Where-Object { $_ -and $_.Trim() })
 }
 
@@ -394,8 +424,9 @@ try {
     }
     Write-Ok "Текущая версия: $current"
 
-    # Коммиты
-    $commits = Get-CommitsSince $lastTag
+    # Коммиты (обёртка @() обязательна: пустой массив из функции PowerShell разворачивается в $null,
+    # и $commits.Count под StrictMode упал бы вместо понятного сообщения «релизить нечего»)
+    $commits = @(Get-CommitsSince $lastTag)
     if ($commits.Count -eq 0) { throw "Нет коммитов с прошлого релиза ($lastTag). Релизить нечего." }
     Write-Ok "Коммитов с прошлого релиза: $($commits.Count)"
     $cat = Get-Categorized $commits

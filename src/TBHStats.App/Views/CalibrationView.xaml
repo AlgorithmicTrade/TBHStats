@@ -1,0 +1,372 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="TBHStats_App.Views.CalibrationView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:conv="using:TBHStats_App.Views.Converters"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <conv:BoolNegationConverter     x:Key="BoolNegationConverter" />
+        <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <conv:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+    </Page.Resources>
+
+    <Grid RowSpacing="8" Padding="12">
+        <Grid.RowDefinitions>
+            <!-- Строка 0: заголовок + кнопки действий -->
+            <RowDefinition Height="Auto" />
+            <!-- Строка 1: область предпросмотра кадра -->
+            <RowDefinition Height="2*" />
+            <!-- Строка 2: разделитель -->
+            <RowDefinition Height="Auto" />
+            <!-- Строка 3: список ROI + редактор выбранного -->
+            <RowDefinition Height="3*" />
+            <!-- Строка 4: статус-бар -->
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ── Строка 0: Заголовок + кнопки ──────────────────────────────────── -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock
+                Grid.Column="0"
+                Text="Калибровка ROI"
+                Style="{StaticResource TitleTextBlockStyle}"
+                VerticalAlignment="Center" />
+
+            <StackPanel
+                Grid.Column="1"
+                Orientation="Horizontal"
+                Spacing="8">
+
+                <Button
+                    Content="Обновить"
+                    Command="{Binding LoadCommand}"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}" />
+
+                <Button
+                    Content="Добавить ROI"
+                    Command="{Binding AddRoiCommand}"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}" />
+
+                <Button
+                    Content="Сохранить"
+                    Command="{Binding SaveCommand}"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}"
+                    Style="{StaticResource AccentButtonStyle}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ── Строка 1: Предпросмотр кадра + оверлей ROI ────────────────────── -->
+        <Border
+            Grid.Row="1"
+            BorderBrush="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+            BorderThickness="1"
+            CornerRadius="4"
+            Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
+
+            <Grid x:Name="PreviewGrid" SizeChanged="PreviewGrid_SizeChanged">
+                <!-- Изображение кадра. FrameImage = null → серый фон с подсказкой. -->
+                <Image
+                    x:Name="FrameImageControl"
+                    Source="{Binding FrameImage}"
+                    Stretch="Uniform"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+
+                <!-- Заглушка при отсутствии кадра -->
+                <TextBlock
+                    Text="Кадр не захвачен. Запустите захват в T051."
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                    Visibility="{Binding FrameImage, Converter={StaticResource NullToVisibilityConverter}}" />
+
+                <!-- Оверлей ROI-прямоугольников.
+                     Прямоугольники перерисовываются в code-behind при SizeChanged
+                     и при изменении коллекции Calibrations. -->
+                <Canvas
+                    x:Name="RoiOverlayCanvas"
+                    IsHitTestVisible="False"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            </Grid>
+        </Border>
+
+        <!-- ── Строка 2: Разделитель ────────────────────────────────────────────── -->
+        <Border
+            Grid.Row="2"
+            Height="1"
+            Background="{ThemeResource SystemControlForegroundBaseLowBrush}"
+            Margin="0,4" />
+
+        <!-- ── Строка 3: Список ROI + редактор ───────────────────────────────── -->
+        <Grid Grid.Row="3" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <!-- Левая колонка: список ROI -->
+                <ColumnDefinition Width="*" />
+                <!-- Правая колонка: редактор выбранного ROI -->
+                <ColumnDefinition Width="2*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ── Список ROI ── -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock
+                    Grid.Row="0"
+                    Text="Список ROI"
+                    Style="{StaticResource SubtitleTextBlockStyle}"
+                    Margin="0,0,0,4" />
+
+                <ListView
+                    Grid.Row="1"
+                    x:Name="RoiListView"
+                    ItemsSource="{Binding Calibrations}"
+                    SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                    SelectionMode="Single">
+
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock
+                                        Text="{Binding FieldKey}"
+                                        Style="{StaticResource BodyTextBlockStyle}" />
+                                    <TextBlock
+                                        Text="{Binding Source}"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}" />
+                                </StackPanel>
+
+                                <Button
+                                    Grid.Column="1"
+                                    Content="&#xE74D;"
+                                    FontFamily="Segoe Fluent Icons"
+                                    ToolTipService.ToolTip="Удалить"
+                                    Command="{Binding ElementName=RoiListView, Path=DataContext.RemoveRoiCommand}"
+                                    CommandParameter="{Binding}"
+                                    Width="32"
+                                    Height="32" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+
+            <!-- ── Редактор выбранного ROI ── -->
+            <ScrollViewer
+                Grid.Column="1"
+                VerticalScrollBarVisibility="Auto">
+
+                <StackPanel
+                    x:Name="EditorPanel"
+                    Spacing="8">
+
+                    <TextBlock
+                        Text="Редактор ROI"
+                        Style="{StaticResource SubtitleTextBlockStyle}"
+                        Margin="0,0,0,4" />
+
+                    <!-- FieldKey -->
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock
+                            Grid.Column="0"
+                            Text="Поле (FieldKey):"
+                            VerticalAlignment="Center" />
+
+                        <ComboBox
+                            Grid.Column="1"
+                            ItemsSource="{Binding AvailableFieldKeys}"
+                            SelectedItem="{Binding SelectedItem.FieldKey, Mode=TwoWay}"
+                            IsEditable="True"
+                            HorizontalAlignment="Stretch" />
+                    </Grid>
+
+                    <!-- Source -->
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock
+                            Grid.Column="0"
+                            Text="Источник:"
+                            VerticalAlignment="Center" />
+
+                        <ComboBox
+                            Grid.Column="1"
+                            ItemsSource="{Binding AvailableSources}"
+                            SelectedItem="{Binding SelectedItem.Source, Mode=TwoWay}"
+                            HorizontalAlignment="Stretch" />
+                    </Grid>
+
+                    <!-- TabId (вкладка, только для Source=Tab) -->
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock
+                            Grid.Column="0"
+                            Text="Вкладка:"
+                            VerticalAlignment="Center" />
+
+                        <ComboBox
+                            Grid.Column="1"
+                            ItemsSource="{Binding AvailableTabs}"
+                            SelectedValuePath="Id"
+                            SelectedValue="{Binding SelectedItem.TabId, Mode=TwoWay}"
+                            DisplayMemberPath="DisplayName"
+                            HorizontalAlignment="Stretch" />
+                    </Grid>
+
+                    <!-- Координаты ROI: X, Y, W, H -->
+                    <TextBlock
+                        Text="Координаты (нормализованные доли [0..1]):"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}" />
+
+                    <Grid ColumnSpacing="8" RowSpacing="4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- X -->
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="X" Style="{StaticResource CaptionTextBlockStyle}" />
+                            <NumberBox
+                                Value="{Binding SelectedItem.X, Mode=TwoWay}"
+                                Minimum="0"
+                                Maximum="1"
+                                SmallChange="0.01"
+                                LargeChange="0.05"
+                                SpinButtonPlacementMode="Inline" />
+                        </StackPanel>
+
+                        <!-- Y -->
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="Y" Style="{StaticResource CaptionTextBlockStyle}" />
+                            <NumberBox
+                                Value="{Binding SelectedItem.Y, Mode=TwoWay}"
+                                Minimum="0"
+                                Maximum="1"
+                                SmallChange="0.01"
+                                LargeChange="0.05"
+                                SpinButtonPlacementMode="Inline" />
+                        </StackPanel>
+
+                        <!-- W -->
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="W" Style="{StaticResource CaptionTextBlockStyle}" />
+                            <NumberBox
+                                Value="{Binding SelectedItem.W, Mode=TwoWay}"
+                                Minimum="0"
+                                Maximum="1"
+                                SmallChange="0.01"
+                                LargeChange="0.05"
+                                SpinButtonPlacementMode="Inline" />
+                        </StackPanel>
+
+                        <!-- H -->
+                        <StackPanel Grid.Column="3">
+                            <TextBlock Text="H" Style="{StaticResource CaptionTextBlockStyle}" />
+                            <NumberBox
+                                Value="{Binding SelectedItem.H, Mode=TwoWay}"
+                                Minimum="0"
+                                Maximum="1"
+                                SmallChange="0.01"
+                                LargeChange="0.05"
+                                SpinButtonPlacementMode="Inline" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- OcrEngine -->
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock
+                            Grid.Column="0"
+                            Text="OCR-движок:"
+                            VerticalAlignment="Center" />
+
+                        <ComboBox
+                            Grid.Column="1"
+                            ItemsSource="{Binding AvailableOcrEngines}"
+                            SelectedItem="{Binding SelectedItem.OcrEngine, Mode=TwoWay}"
+                            HorizontalAlignment="Stretch" />
+                    </Grid>
+
+                    <!-- ParseHint -->
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock
+                            Grid.Column="0"
+                            Text="Подсказка OCR:"
+                            VerticalAlignment="Center" />
+
+                        <TextBox
+                            Grid.Column="1"
+                            Text="{Binding SelectedItem.ParseHint, Mode=TwoWay}"
+                            PlaceholderText="Необязательно (напр. 0123456789KMB)"
+                            HorizontalAlignment="Stretch" />
+                    </Grid>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- ── Строка 4: Статус ──────────────────────────────────────────────────── -->
+        <Grid Grid.Row="4" ColumnSpacing="8" Margin="0,4,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <ProgressRing
+                Grid.Column="0"
+                IsActive="{Binding IsBusy}"
+                Width="16"
+                Height="16"
+                Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+            <TextBlock
+                Grid.Column="1"
+                Text="{Binding StatusMessage}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                VerticalAlignment="Center"
+                TextWrapping="Wrap" />
+        </Grid>
+    </Grid>
+</Page>

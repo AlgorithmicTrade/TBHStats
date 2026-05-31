@@ -2,7 +2,7 @@
 
 **Проект**: TBHStats — десктоп-помощник по статистике для игры Task Bar Hero
 **Платформа**: Windows 11 (x64/arm64), один локальный пользователь
-**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010)
+**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010/T022/T023/T024/T025/T026/T028)
 **Спецификация-источник**: `specs/001-tbh-stats-helper/` (plan, research, data-model, contracts) · конституция `v2.2.0`
 
 > TBHStats наблюдает за окном запущенной игры, **визуально** считывает игровые показатели (золото, опыт, время этапа, класс/уровень/урон героя, текущий этап, сундуки по типам), вычисляет темпы (золото/час, опыт/час, сундуки/час), накапливает историю по 60 этапам (3 акта × 2 сложности × 10) и рекомендует оптимальный этап для фарма. Режим строго **observe-only**: никаких записей в память игры и инъекций ввода.
@@ -131,6 +131,17 @@
 - Поля привязаны к источнику (`Source = MainZone | Tab`): на каждом кадре читаются только **доступные** поля — `MainZone` всегда + поля той вкладки, что сейчас активна (FR-002b).
 - **Никакого автопереключения** (observe-only): значения вкладок обновляются оппортунистически, когда игрок сам открыл раздел. Если активная вкладка не определена достоверно — поля `Source=Tab` пропускаются, `MainZone`-поля продолжают читаться.
 
+**Реализация (T022):**
+- `ITabNameMatcher` — чистый шов (без WGC/OCR-зависимостей): `TabRef? Match(string recognizedText, GameMechanicsConfig cfg, double minSimilarity = 0.6)`.
+- `TabNameMatcher` — алгоритм Вагнера–Фишера (итеративный O(n·m), оптимизация на два ряда):
+  1. Нормализация: `Trim()` + `ToLowerInvariant()` + regex `\s+` → `" "` (схлопывание пробелов).
+  2. Похожесть = `1.0 − Lev(norm1, norm2) / Max(len1, len2)`.
+  3. Перебор всех `Tab.IsActive == true`; выбирается максимум (при равных — первый по порядку).
+  4. `recognizedText` пустой/whitespace → немедленно `null`; похожесть ниже `minSimilarity` → `null`.
+  5. Возвращает `new TabRef(tab.Id, tab.Key, similarity)`.
+- `ITabDetector` — `Task<TabRef?> DetectActiveTabAsync(CapturedFrame, RoiCalibration activeTabRoi, GameMechanicsConfig, CancellationToken)`. ROI `activeTab` передаётся вызывающим оркестратором (T026), что позволяет детектору не знать об общем наборе ROI.
+- `TabDetector(IOcrReader, ITabNameMatcher)` — зависимость от `IRoiMapper` убрана (OCR.ReadAsync сам принимает `RoiCalibration`). При `OcrResult.Recognized == false` → немедленно `null` (не ошибка, FR-005).
+
 ---
 
 ## 6. Хранилище
@@ -199,16 +210,35 @@
 
 **Composition root** (TBHStats.App) регистрирует контекст так:
 ```csharp
-string dbPath = DatabaseInitializer.GetDbPath();
-services.AddDbContext<TbhStatsDbContext>(opt =>
-    DatabaseInitializer.ConfigureSqlite(opt, dbPath));
+string dbConnectionString = DatabaseInitializer.GetConnectionString(DatabaseInitializer.GetDbPath());
+services.AddDbContext<TbhStatsDbContext>(
+    options => options.UseSqlite(dbConnectionString),
+    ServiceLifetime.Scoped);
 // При старте:
 await DatabaseInitializer.InitializeAsync(db, ct);
 ```
 
 ---
 
-## 7. Графики
+## 7. Графики и UI-виджет
+
+### Виджет живой статистики (T028, US1)
+
+Стартовое окно приложения — `WidgetWindow` (`TBHStats_App.Views.WidgetWindow`):
+
+- Наследует `Window` (Windows App SDK), namespace `TBHStats_App` (как `MainWindow`).
+- DataContext корневого Grid задаётся из DI: `App.Services.GetRequiredService<LiveStatsViewModel>()`.
+- Стартовый размер 320×220 px (SC-006: ≤15% экрана); позиция/размер/AlwaysOnTop восстанавливаются из `WidgetSettings` через `AppWindow.MoveAndResize` + `OverlappedPresenter.IsAlwaysOnTop`.
+- При изменении размера/позиции (AppWindow.Changed) — сохранение в `WidgetSettings` через отдельный scope (дедупликация, задержка 500 мс).
+- При закрытии виджета — `IStatsOrchestrator.StopAsync()`.
+- Кнопка «Калибровка» открывает `CalibrationHostWindow` — отдельное окно-хост с Frame.Navigate(`CalibrationView`).
+
+Визуальные состояния (T031):
+- `IsGameFound == false` → красная плашка «Игра не найдена».
+- `IsWaiting == true` → жёлтая плашка «Ожидание».
+- `IsStale == true` → метка времени последнего обновления приглушена; поле `LastUpdateText`.
+
+### Графики
 
 **Решение**: **LiveCharts2** (`LiveChartsCore.SkiaSharpView.WinUI`).
 
@@ -271,36 +301,48 @@ tests/
        │ кадр (или        │                  │                  │
        │ «ожидание»)      │                  │                  │
        ▼                  │                  │                  │
- найти окно ──► детекция активной вкладки     │                  │
+ session.TryGetFrameAsync()──► null (Waiting/NotFound)          │
+       │     null → публикуем IsStale-снимок, ждём интервал     │
+       │     frame → State=Capturing                            │
+       ▼                  │                  │                  │
+ DetectActiveTabAsync()   │                  │                  │
+  (ROI «activeTab»)       │                  │                  │
        │                  ▼                  │                  │
-       │          извлечь ДОСТУПНЫЕ поля      │                  │
-       │          (MainZone + активн. вкладка)│                  │
+       │          ExtractAsync()             │                  │
+       │          (MainZone + активн. вкладка)│                 │
        │                  ▼                  │                  │
-       │          парсинг K/M/B, время        │                  │
+       │          IObservationValidator      │                  │
+       │          .Validate() → MetricSample │                  │
+       │          (confidence ≥ 0.6 + sanity)│                  │
        │                  ▼                  │                  │
-       │          sanity / confidence фильтр  │                  │
-       │                  ▼                  │                  │
-       │          надёжные MetricSample ──────► вычисление темпов │
-       │                                      (золото/опыт/      │
-       │                                       сундуки в час)     │
-       │                                      ▼                  │
-       │                                 биндинг в виджет ───────► живые показатели (P1)
-       │                                      │                  │
- завершение этапа (прогрессбар + босс) ────────► закрыть StageRun ─► AddRun → Recompute (P2)
-                                              │                  │
- экран сравнения ──────────────────────────────► ранжирование + ─► рекомендация (P2)
-                                            рекомендация
+       │          IsReliable=true ───────────► скользящий буфер │
+       │                                     (≤200 сэмплов)    │
+       │                                      ▼                 │
+       │                                 ComputeLiveRates() ────► LiveStatsSnapshot
+       │                                                        │  → SnapshotUpdated event
+       │                                                        │  → ViewModel биндинг (P1)
+       │                                                        │
+ завершение этапа (прогрессбар + босс, T035) ──────────────────► AddRunAsync → RecomputeForStageAsync (P2)
+                                                                │
+ экран сравнения ───────────────────────────────────────────────► GetAllAsync + RankStages (P2)
 ```
 
-Подробно по шагам:
+Подробно по шагам (`StatsOrchestrator.RunLoopAsync`):
 
-1. `tracker.FindGameWindow()` → нет окна → `NotFound`.
-2. `session.TryGetFrameAsync()` → `Waiting` (свёрнуто/закрыто) → показать последние достоверные, ждать (FR-005).
-3. `tabDetector.DetectActiveTabAsync()` → активная вкладка; `extractor.ExtractAsync(frame, rois, activeTab)` читает только доступные поля (FR-002b).
-4. `parser` (сокращённые числа K/M/B, время этапа) → **sanity / confidence фильтр** (R4) → надёжные `MetricSample` (FR-005a).
-5. `metrics.ComputeLiveRates()` по интервалам **между надёжными точками** (периоды недоступности окна не считаются «нулевой добычей») → биндинг в виджет.
-6. Завершение этапа (прогрессбар + появление/убийство **босса этапа** в MainZone) → собрать `StageRun` → `runRepo.AddRunAsync` → `aggRepo.RecomputeForStageAsync`.
-7. Экран сравнения → `aggRepo.GetAllAsync` + `optimization.RankStages / RecommendBestStage`.
+1. Загрузить `WidgetSettings` (интервал опроса) и `RoiCalibrations` (кэш, загружается однократно).
+2. `session.TryGetFrameAsync(ct)` → `null` (состояние `session.State` == `NotFound`/`Waiting`) → `PublishStaleSnapshot(session.State)`, задержка, продолжить.
+3. `frame != null` → `State=Capturing`. Найти ROI «activeTab» в калибровках → `tabDetector.DetectActiveTabAsync()`.
+4. `fieldExtractor.ExtractAsync(frame, rois, activeTab, cfg, ct)` → `RawObservation`.
+5. `validator.Validate(obs, _lastReliableSample, 0.6)` → `MetricSample`. Если `IsReliable` → обновить `_lastReliableSample`, добавить в скользящий буфер (≤200 записей), обновить «последние известные» значения.
+6. `metrics.ComputeLiveRates(buffer)` (если буфер ≥2 сэмплов) → `LiveRates`.
+7. Собрать `LiveStatsSnapshot`; `IsStale = (State != Capturing) || (lastReliableUtc устарел > 30 c)`. Опубликовать через событие `SnapshotUpdated`.
+8. Исключения захвата/OCR → `logger.LogWarning` + `PublishStaleSnapshot`, без броска наружу. `using (frame)` — `CapturedFrame.Dispose()` гарантирован.
+9. `Task.Delay(pollIntervalMs, ct)` — период петли.
+
+**Реализация (T026)**:
+- `LiveStatsSnapshot` (sealed record) — `src/TBHStats.App/Services/LiveStatsSnapshot.cs`: поля `CaptureState State`, `LiveRates Rates`, `long? Gold`, `int? HeroLevel`, `string? HeroClass`, `long? HeroDamage`, `StageRef? Stage`, `DateTime? LastReliableUtc`, `bool IsStale`. Статик `Empty` — начальное значение.
+- `IStatsOrchestrator` — `src/TBHStats.App/Services/IStatsOrchestrator.cs`: `LiveStatsSnapshot Current`, `event EventHandler<LiveStatsSnapshot>? SnapshotUpdated`, `Task StartAsync(CancellationToken)`, `Task StopAsync()`.
+- `StatsOrchestrator` — `src/TBHStats.App/Services/StatsOrchestrator.cs`: singleton, конструктор принимает 8 зависимостей через DI. `_current` volatile (запись через `_current = snapshot`; WinUI-приложение single-writer). Буфер `_reliableBuffer` ограничен `MaxReliableBufferSize=200`. `ConfidenceThreshold=0.6`. `StaleThresholdSeconds=30`.
 
 **Тонкости домена** (R4):
 - **EXP** показывается в пределах уровня и обнуляется при level-up: прирост считается с учётом `HeroLevel` и `XpToLevel` (добор до полного предыдущего уровня + текущий EXP), а не как убыль.
@@ -336,7 +378,12 @@ Capturing ──(низкая уверенность OCR)───────�
 - `ICaptureSession` / `CaptureSession` — кадры окна и `CaptureState` (FR-005). Возвращает `CapturedFrame?` — общий тип кадра (`SoftwareBitmap` + `SizePx` + timestamp), потребляемый OCR/детектором/экстрактором. Реализует `IAsyncDisposable`. Файлы: `Wgc/ICaptureSession.cs`, `Wgc/CaptureSession.cs`, `Wgc/Direct3D11Interop.cs`, `Wgc/GraphicsCaptureItemInterop.cs`.
 - `IOcrReader` / `OcrReader` — распознавание значения из нормализованной ROI (FR-002/003). Кроп через `BitmapEncoder/Decoder + BitmapBounds`; confidence = геометрическое покрытие слов в ROI (см. §3).
 - `ITabDetector` — распознавание активной вкладки (FR-002a).
-- `IFieldExtractor` — кадр → набор доступных сырых значений по активной вкладке (FR-002b).
+- `IFieldExtractor` / `FieldExtractor` — кадр → набор доступных сырых значений по активной вкладке → `RawObservation` (FR-002b, T023).
+  - Сигнатура: `Task<RawObservation> ExtractAsync(CapturedFrame, IReadOnlyList<RoiCalibration>, TabRef?, GameMechanicsConfig, CancellationToken)`.
+  - Ctor: `FieldExtractor(IOcrReader, IValueParser)`.
+  - Правило доступности (FR-002b): `MainZone` всегда; `Tab` — только если `activeTab.Value.TabId == roi.TabId`. `activeTab`-поле не OCR-ится (берётся из параметра). Визуальные поля `stageProgress` / `bossPresent` пропускаются в v1 (детекция в T035 StageCompletionDetector).
+  - FieldKey-маппинг: `gold/xp/xpToLevel/heroDamage` → `TryParseAbbreviatedNumber`; `heroLevel` → `int.TryParse` (≥1); `heroClass` → trimmed text; `stageId` → `StageText` (сырой); `stageTime` → `TryParseStageTimeSeconds`; `nextLocation` → `TryParseStageId`; `chest:<key>` → lookup в `cfg.ChestTypes` + `TryParseAbbreviatedNumber → int`.
+  - Неизвестные FieldKey тихо пропускаются; ошибки парсинга не выбрасываются — поле остаётся null (FR-005).
 
 **`TBHStats.Core`**
 - `IValueParser` / `ValueParser` — сокращённые числа K/M/B/T, время этапа («SS»/«MM:SS»/«H:MM:SS»), идентификатор этапа (R4). Реализован в `TBHStats.Core/Parsing/`; без статического состояния, `CultureInfo.InvariantCulture`, `decimal`-арифметика для точных множителей.
@@ -348,6 +395,12 @@ Capturing ──(низкая уверенность OCR)───────�
 - `IRunRepository` — забеги и сэмплы (FR-007).
 - `IStageAggregateRepository` — агрегаты этапов, пересчёт (FR-008).
 - `ISettingsRepository` — настройки виджета, профиль оптимизации, калибровки ROI (FR-016/003).
+
+**`TBHStats.App/Services`** (T026)
+- `IStatsOrchestrator` / `StatsOrchestrator` — фоновая петля US1 (FR-004). Singleton. `StartAsync`/`StopAsync` управляют `CancellationTokenSource` + `Task.Run`-петлёй. Не привязан к UI-диспетчеру — ViewModel маршалирует в UI.
+- `LiveStatsSnapshot` (sealed record) — снимок для биндинга: состояние захвата + темпы + последние достоверные значения + IsStale.
+- `ScopedSettingsRepositoryProxy` (internal) — адаптер для singleton-safe доступа к scoped `ISettingsRepository`: создаёт `AsyncServiceScope` на каждый вызов через `IServiceProvider`.
+- `Composition.AddTbhStatsServices` (T004/T026) — полный composition root: Data (DbContext SQLite + 3 scoped репозитория), Core (5 singleton-сервисов), Capture (6 singleton-сервисов включая `ICaptureSession→CaptureSession`), App (singleton `IStatsOrchestrator` через фабрику с `ScopedSettingsRepositoryProxy`).
 
 ---
 
@@ -385,7 +438,14 @@ Capturing ──(низкая уверенность OCR)───────�
 - **Предпочтительно MSIX** (packaged) — надёжный доступ к WinRT (WGC/OCR), идентичность приложения, автообновления.
 - **Unpackaged / self-contained** (один `.exe`) — опционально для «portable»-сборки; требует установленного .NET 8 desktop runtime и тщательной проверки WinRT-вызовов.
 
-**Целевые показатели**: кадр + OCR одной ROI < ~150 мс; живые темпы видны ≤10 c после старта (SC-001); возобновление после перекрытия ≤5 c (SC-008); низкая idle-нагрузка CPU (захват по требованию, не непрерывный видеопоток).
+**Последовательность запуска (T028)**:
+
+1. `App()` — `BuildHost()`: регистрация DI (Composition.AddTbhStatsServices).
+2. `OnLaunched` — создаёт `WidgetWindow`, вызывает `Activate()` синхронно (WinUI требует).
+3. Асинхронно (`InitializeAsync`): `DatabaseInitializer.InitializeAsync(db)` (миграции + сидинг) → `IStatsOrchestrator.StartAsync(CancellationToken.None)`.
+4. При закрытии виджета — `IStatsOrchestrator.StopAsync()`.
+
+**Celевые показатели**: кадр + OCR одной ROI < ~150 мс; живые темпы видны ≤10 c после старта (SC-001); возобновление после перекрытия ≤5 c (SC-008); низкая idle-нагрузка CPU (захват по требованию, не непрерывный видеопоток).
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Проект**: TBHStats — десктоп-помощник по статистике для игры Task Bar Hero
 **Платформа**: Windows 11 (x64/arm64), один локальный пользователь
-**Дата**: 2026-05-31
+**Дата актуализации**: 2026-05-31 (T012)
 **Спецификация-источник**: `specs/001-tbh-stats-helper/` (plan, research, data-model, contracts) · конституция `v2.2.0`
 
 > TBHStats наблюдает за окном запущенной игры, **визуально** считывает игровые показатели (золото, опыт, время этапа, класс/уровень/урон героя, текущий этап, сундуки по типам), вычисляет темпы (золото/час, опыт/час, сундуки/час), накапливает историю по 60 этапам (3 акта × 2 сложности × 10) и рекомендует оптимальный этап для фарма. Режим строго **observe-only**: никаких записей в память игры и инъекций ввода.
@@ -239,6 +239,10 @@ Capturing ──(низкая уверенность OCR)───────�
 
 **`TBHStats.Capture`**
 - `IGameWindowTracker` — поиск/отслеживание окна, размер клиентской области (FR-001, FR-005b).
+  - Реализация: `GameWindowTracker` (Win32 EnumWindows + user32.dll P/Invoke). Конфигурируется через `GameWindowTrackerOptions.WindowTitleHints` (case-insensitive Contains, дефолты: `"Task Bar Hero"`, `"TaskBarHero"`, `"TBH"`).
+  - Вспомогательные типы: `GameWindowHandle` (HWND + PID + заголовок), `SizePx` (ширина × высота клиентской области).
+  - `GetVisibility`: `!IsWindow` → `Closed`; `IsIconic` → `Minimized`; иначе → `Visible`. Перекрытие НЕ влияет на статус.
+  - `GetClientSize`: `GetClientRect` → `SizePx`; невалидный HWND → `SizePx.Empty` (0×0), без исключения.
 - `ICaptureSession` — кадры окна и `CaptureState` (FR-005).
 - `IOcrReader` — распознавание значения из нормализованной ROI (FR-002/003).
 - `ITabDetector` — распознавание активной вкладки (FR-002a).
@@ -259,7 +263,17 @@ Capturing ──(низкая уверенность OCR)───────�
 
 ## 12. Расширяемость
 
-**Декларативный `GameMechanicsConfig`** (`TBHStats.Core/Mechanics`) описывает типы сундуков, классы героев, акты/сложности/этапы и вкладки. Сериализуемый: встроенный default + переопределение из файла/БД, сидирует справочные таблицы.
+**Декларативный `GameMechanicsConfig`** (`TBHStats.Core/Mechanics`) описывает типы сундуков, классы героев, акты/сложности/этапы, вкладки и привязки полей к источникам. Встроенный default (`GameMechanicsConfig.CreateDefault()`) + переопределение из файла/БД, сидирует справочные таблицы.
+
+Состав дефолтного сида:
+- **ChestTypes** (3): brown «Базовый», blue «Редкий», red «Легендарный».
+- **Tabs** (9): hero, stash, status, runes, cube, portal, settings, tradeship, mailbox (IsDataSource: hero/status/portal).
+- **Acts** (3) × **Difficulties** (2: normal/nightmare) × **Stages** (10) = **60** этапов.
+- **HeroClasses** (пустой по умолчанию — классы открываются динамически и добавляются через `Reload`).
+- **FieldSourceBindings** (14): gold→hero-tab, xp/xpToLevel/heroLevel/heroDamage/heroClass→status-tab, stageId→portal-tab, остальные→MainZone.
+
+`FieldSourceBinding` (record: FieldKey, Source, TabId?) связывает поле с источником (FR-002b) — используется `IFieldExtractor` для фильтрации по активной вкладке.
+`IGameMechanics` / `GameMechanics` — контракт и реализация доступа к конфигу (FR-021): `Current` + `Reload(cfg)` с guard на null.
 
 - Новый элемент (4-й тип сундука, новый класс, новая вкладка) = запись в конфиге + ROI в калибровке, **без правки доменных типов и схемы БД**.
 - `ChestType` / `HeroClass` / `Tab` — справочные сущности-данные, а не enum'ы-в-коде.

@@ -18,11 +18,14 @@ public sealed class ValueParser : IValueParser
     // ─── Регулярные выражения (компилируются один раз на тип) ────────────────
 
     /// <summary>
-    /// Разбирает число с опциональным суффиксом: «1.2K», «3.4 M», «5B», «2.5T», «1,234», «999»,
+    /// Разбирает число с опциональным суффиксом: «1,2K», «3,4 M», «5B», «2,5T», «392,8», «999»,
     /// а также полноразмерные числа с пробелом-разделителем разрядов «54 678», «2 285 394»
     /// (реальный формат TBH — европейская локаль, verified на скриншотах, GAME-FACTS §12).
-    /// Группы: «digits» — числовая часть (цифры, запятые, точка, пробел/неразрывный пробел
-    /// как разделитель разрядов), «suffix» — буква суффикса.
+    /// Группы: «digits» — числовая часть (цифры, запятая/точка как десятичный разделитель),
+    /// «suffix» — буква суффикса.
+    /// Запятая в группе «digits» трактуется как десятичный разделитель (европейская локаль):
+    /// «392,8» → 392.8, «1,2K» → 1200. Пробелы-тысячи уже убраны <see cref="DigitGroupSeparatorRegex"/>
+    /// до передачи строки в этот regex, поэтому «,» как групповой разделитель в TBH не встречается.
     /// </summary>
     private static readonly Regex AbbreviatedNumberRegex = new(
         @"^\s*(?<digits>[\d,]*\.?\d+)\s*(?<suffix>[KkMmBbTt])?\s*$",
@@ -47,6 +50,16 @@ public sealed class ValueParser : IValueParser
     /// </summary>
     private static readonly Regex StageTimeRegex = new(
         @"^\s*(?:(?:(?<h>\d+):)?(?<m>\d{1,2}):)?(?<s>\d{1,2})\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(100));
+
+    /// <summary>
+    /// Разбирает формат «акт-этап» из MainZone-поля nextLocation: «3-2», «2 - 10», «[3-2]».
+    /// Сложность не указывается (в MainZone её нет). Берётся первое вхождение «число-разделитель-число».
+    /// Разделитель — дефис/минус/тире.
+    /// </summary>
+    private static readonly Regex NextLocationRegex = new(
+        @"(?<act>\d+)\s*[-–—]\s*(?<stage>\d+)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant,
         TimeSpan.FromMilliseconds(100));
 
@@ -86,8 +99,11 @@ public sealed class ValueParser : IValueParser
         if (!match.Success)
             return false;
 
-        // Убираем групповые разделители (запятые) — они не являются десятичными в idle-формате.
-        string digitsStr = match.Groups["digits"].Value.Replace(",", string.Empty, StringComparison.Ordinal);
+        // TBH использует европейскую локаль: запятая — ДЕСЯТИЧНЫЙ разделитель («392,8» = 392.8,
+        // «1,2K» = 1200), пробел — разделитель тысяч (уже убран DigitGroupSeparatorRegex выше).
+        // Заменяем запятую на точку, чтобы decimal.TryParse с InvariantCulture корректно
+        // распознал дробную часть. При некорректном вводе с двумя точками TryParse вернёт false.
+        string digitsStr = match.Groups["digits"].Value.Replace(",", ".", StringComparison.Ordinal);
 
         if (!decimal.TryParse(digitsStr, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out decimal number))
             return false;
@@ -119,6 +135,67 @@ public sealed class ValueParser : IValueParser
             return false;
 
         value = (long)result;   // decimal→long усекает дробную часть (floor для ≥0)
+        return true;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // TryParseXpPair
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public bool TryParseXpPair(string raw, out long current, out long toLevel)
+    {
+        current = 0L;
+        toLevel = 0L;
+
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+
+        int idx = raw.IndexOf('/', StringComparison.Ordinal);
+        if (idx < 0)
+            return false;
+
+        string left  = raw[..idx];
+        string right = raw[(idx + 1)..];
+
+        // Защита от OCR-шума: строка не должна содержать более одного разделителя «/».
+        if (right.Contains('/', StringComparison.Ordinal))
+            return false;
+
+        if (!TryParseAbbreviatedNumber(left, out long c) ||
+            !TryParseAbbreviatedNumber(right, out long t))
+            return false;
+
+        current = c;
+        toLevel = t;
+        return true;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // TryParseNextLocation
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public bool TryParseNextLocation(string raw, out int actNumber, out int stageNumber)
+    {
+        actNumber = 0;
+        stageNumber = 0;
+
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+
+        Match match = NextLocationRegex.Match(raw);
+        if (!match.Success)
+            return false;
+
+        if (!int.TryParse(match.Groups["act"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int act) || act < 1)
+            return false;
+
+        if (!int.TryParse(match.Groups["stage"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int stage) || stage < 1)
+            return false;
+
+        actNumber = act;
+        stageNumber = stage;
         return true;
     }
 

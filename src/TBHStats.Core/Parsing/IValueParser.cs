@@ -43,6 +43,39 @@ public interface IValueParser
     bool TryParseStageTimeSeconds(string raw, out int seconds);
 
     /// <summary>
+    /// Пытается разобрать объединённую строку опыта вида «текущий / до_уровня».
+    /// </summary>
+    /// <param name="raw">
+    /// Строка OCR, например «5 530 764 / 6 266 704» или «1.2K / 3.4K».
+    /// Пробел используется как разделитель разрядов (европейская локаль TBH).
+    /// Суффиксы K / M / B / T регистронезависимы. Единственный разделитель — «/»;
+    /// при его отсутствии или наличии нескольких — метод возвращает <see langword="false"/>.
+    /// </param>
+    /// <param name="current">
+    /// Текущее значение опыта героя.
+    /// При возврате <see langword="false"/> равно 0.
+    /// </param>
+    /// <param name="toLevel">
+    /// Опыт, необходимый до следующего уровня.
+    /// При возврате <see langword="false"/> равно 0.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/>, если обе половины строки успешно разобраны;
+    /// иначе <see langword="false"/>.
+    /// </returns>
+    bool TryParseXpPair(string raw, out long current, out long toLevel);
+
+    /// <summary>
+    /// Пытается разобрать MainZone-поле «следующая локация» формата «акт-этап» (например «3-2»).
+    /// Сложность в MainZone не отображается, поэтому не возвращается — только номера акта и этапа.
+    /// </summary>
+    /// <param name="raw">Строка OCR, например «3-2», «2 - 10», «[3-2]».</param>
+    /// <param name="actNumber">Номер акта (≥1) при успехе; иначе 0.</param>
+    /// <param name="stageNumber">Номер этапа (≥1) при успехе; иначе 0.</param>
+    /// <returns><see langword="true"/>, если найдена пара «число-разделитель-число»; иначе <see langword="false"/>.</returns>
+    bool TryParseNextLocation(string raw, out int actNumber, out int stageNumber);
+
+    /// <summary>
     /// Пытается разобрать идентификатор текущего этапа из OCR-строки.
     /// </summary>
     /// <param name="raw">

@@ -4,10 +4,12 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using TBHStats.Capture;
+using TBHStats.Capture.Ocr;
 using TBHStats.Capture.Wgc;
 using TBHStats.Core.Mechanics;
 using TBHStats.Core.Models;
 using TBHStats.Data.Repositories;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics.Imaging;
 
 namespace TBHStats.App.ViewModels;
@@ -23,6 +25,11 @@ public sealed partial class CalibrationViewModel : ObservableObject
     private readonly ISettingsRepository _settings;
     private readonly IGameMechanics _gameMechanics;
     private readonly ICaptureSession _captureSession;
+    private readonly IOcrReader _ocrReader;
+
+    // Последний захваченный кадр; удерживается для команды TestSelectedRoiOcrAsync.
+    // Диспозится при каждом новом захвате (удерживается максимум один кадр).
+    private CapturedFrame? _lastFrame;
 
     // ──────────────────────────────────────────────────────────────
     // Список ROI
@@ -86,6 +93,21 @@ public sealed partial class CalibrationViewModel : ObservableObject
     private bool _isBusy;
 
     // ──────────────────────────────────────────────────────────────
+    // OCR-предпросмотр выбранной ROI
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>Распознанный текст из выбранной ROI (заполняется командой <see cref="TestSelectedRoiOcrCommand"/>).</summary>
+    [ObservableProperty]
+    private string _ocrPreviewText = string.Empty;
+
+    /// <summary>Статус последней OCR-проверки (уверенность / подсказка об ошибке).</summary>
+    [ObservableProperty]
+    private string _ocrPreviewStatus = string.Empty;
+
+    /// <summary>Уверенность последнего распознавания [0..1] (0, если не распознано). Для копирования.</summary>
+    private double _lastOcrConfidence;
+
+    // ──────────────────────────────────────────────────────────────
     // Constructor
     // ──────────────────────────────────────────────────────────────
 
@@ -94,14 +116,18 @@ public sealed partial class CalibrationViewModel : ObservableObject
     /// </summary>
     /// <param name="settings">Репозиторий настроек (загрузка / сохранение ROI).</param>
     /// <param name="gameMechanics">Конфиг механик (вкладки, FieldKey).</param>
+    /// <param name="captureSession">Сессия захвата кадра игры.</param>
+    /// <param name="ocrReader">Движок OCR для живого предпросмотра выбранной ROI.</param>
     public CalibrationViewModel(
         ISettingsRepository settings,
         IGameMechanics gameMechanics,
-        ICaptureSession captureSession)
+        ICaptureSession captureSession,
+        IOcrReader ocrReader)
     {
         _settings = settings;
         _gameMechanics = gameMechanics;
         _captureSession = captureSession;
+        _ocrReader = ocrReader;
 
         GameMechanicsConfig cfg = gameMechanics.Current;
 
@@ -165,7 +191,8 @@ public sealed partial class CalibrationViewModel : ObservableObject
 
         try
         {
-            using CapturedFrame? frame = await _captureSession.TryGetFrameAsync(ct);
+            // Не используем using: кадр удерживается в _lastFrame для TestSelectedRoiOcrAsync.
+            CapturedFrame? frame = await _captureSession.TryGetFrameAsync(ct);
             if (frame is null)
             {
                 FrameImage = null;
@@ -176,7 +203,13 @@ public sealed partial class CalibrationViewModel : ObservableObject
                 return;
             }
 
+            // Диспозим предыдущий кадр перед сохранением нового.
+            CapturedFrame? previous = _lastFrame;
+            _lastFrame = frame;
+            previous?.Dispose();
+
             // SoftwareBitmapSource требует BGRA8 с premultiplied-альфой.
+            // converted — временный, диспозится здесь; frame.Bitmap удерживается вместе с кадром.
             SoftwareBitmap source = frame.Bitmap;
             SoftwareBitmap? converted = null;
             if (source.BitmapPixelFormat != BitmapPixelFormat.Bgra8 ||
@@ -293,6 +326,87 @@ public sealed partial class CalibrationViewModel : ObservableObject
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Запустить OCR на последнем захваченном кадре по выбранной ROI и показать результат
+    /// в свойствах <see cref="OcrPreviewText"/> / <see cref="OcrPreviewStatus"/>.
+    /// Вызывается автоматически после рисования рамки и при смене выбранного элемента.
+    /// </summary>
+    [RelayCommand]
+    private async Task TestSelectedRoiOcrAsync(CancellationToken ct)
+    {
+        if (_lastFrame is null)
+        {
+            OcrPreviewText = string.Empty;
+            OcrPreviewStatus = "Сначала захватите кадр.";
+            return;
+        }
+
+        if (SelectedItem is null)
+        {
+            OcrPreviewText = string.Empty;
+            OcrPreviewStatus = "Выберите ROI.";
+            return;
+        }
+
+        if (SelectedItem.W <= 0 || SelectedItem.H <= 0)
+        {
+            OcrPreviewStatus = "Обведите область ROI.";
+            return;
+        }
+
+        try
+        {
+            RoiCalibration roi = SelectedItem.ToDomain();
+            // Не используем ConfigureAwait(false): возвращаемся на UI-поток для присваивания свойств.
+            OcrResult res = await _ocrReader.ReadAsync(_lastFrame, roi, ct);
+
+            OcrPreviewText = string.IsNullOrEmpty(res.RawText) ? "(пусто)" : res.RawText;
+            _lastOcrConfidence = res.Recognized ? res.Confidence : 0.0;
+            OcrPreviewStatus = res.Recognized
+                ? $"Распознано · уверенность {res.Confidence:F2}"
+                : "Не распознано (текст не найден в области)";
+        }
+        catch (OperationCanceledException)
+        {
+            // отмена — нормальный выход
+        }
+        catch (Exception ex)
+        {
+            OcrPreviewStatus = $"Ошибка OCR: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Копирует в буфер обмена название ROI (FieldKey), распознанный текст и уверенность OCR
+    /// в формате «&lt;FieldKey&gt;: &lt;текст&gt; (уверенность NN%)». Плейсхолдер «(пусто)» и пустые значения не копируются.
+    /// </summary>
+    [RelayCommand]
+    private void CopyOcrPreview()
+    {
+        string text = OcrPreviewText;
+        if (string.IsNullOrWhiteSpace(text) || text == "(пусто)")
+        {
+            OcrPreviewStatus = "Нечего копировать.";
+            return;
+        }
+
+        string? fieldKey = SelectedItem?.FieldKey;
+        string head = string.IsNullOrWhiteSpace(fieldKey) ? text : $"{fieldKey}: {text}";
+        string payload = $"{head} (уверенность {_lastOcrConfidence:P0})";
+
+        try
+        {
+            DataPackage package = new();
+            package.SetText(payload);
+            Clipboard.SetContent(package);
+            OcrPreviewStatus = "Скопировано в буфер обмена.";
+        }
+        catch (Exception ex)
+        {
+            OcrPreviewStatus = $"Ошибка копирования: {ex.Message}";
         }
     }
 }

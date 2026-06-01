@@ -59,25 +59,41 @@ public sealed class MetricsCalculator : IMetricsCalculator
             // --- Опыт ---
             if (a.Xp.HasValue && b.Xp.HasValue && intervalSeconds > 0.0)
             {
-                double xpDelta;
+                // Отбрасываем заведомо невозможные чтения (текущий опыт > нужного до уровня) —
+                // это OCR-мусор; иначе он раздувает темп (наблюдалось 1.08e9 опыт/ч).
+                bool plausible =
+                    !(a.XpToLevel.HasValue && a.Xp.Value > a.XpToLevel.Value)
+                    && !(b.XpToLevel.HasValue && b.Xp.Value > b.XpToLevel.Value);
 
-                bool levelUpByOne = a.HeroLevel.HasValue && b.HeroLevel.HasValue
-                                    && b.HeroLevel.Value == a.HeroLevel.Value + 1;
+                if (plausible)
+                {
+                    double xpDelta;
 
-                if (levelUpByOne && a.XpToLevel.HasValue)
-                {
-                    // Level-up компенсация: (xpToLevel - a.Xp) + b.Xp
-                    xpDelta = (double)(a.XpToLevel.Value - a.Xp.Value) + b.Xp.Value;
-                }
-                else
-                {
-                    xpDelta = b.Xp.Value - a.Xp.Value;
-                }
+                    bool levelUpByOne = a.HeroLevel.HasValue && b.HeroLevel.HasValue
+                                        && b.HeroLevel.Value == a.HeroLevel.Value + 1;
 
-                xpElapsedSum += intervalSeconds;
-                if (xpDelta > 0.0)
-                {
-                    xpDeltaSum += xpDelta;
+                    // Level-up компенсацию применяем ТОЛЬКО если a.Xp реально у потолка
+                    // (≥ 0.8·xpToLevel). Настоящий level-up происходит у полного опыта;
+                    // «инкремент уровня» при низком a.Xp — это misread heroLevel, и
+                    // компенсация (xpToLevel − a.Xp) инжектировала бы ~весь xpToLevel (выброс).
+                    bool nearFull = a.XpToLevel.HasValue
+                                    && a.Xp.Value >= a.XpToLevel.Value * 0.8;
+
+                    if (levelUpByOne && nearFull)
+                    {
+                        // Level-up компенсация: (xpToLevel - a.Xp) + b.Xp
+                        xpDelta = (double)(a.XpToLevel!.Value - a.Xp.Value) + b.Xp.Value;
+                    }
+                    else
+                    {
+                        xpDelta = b.Xp.Value - a.Xp.Value;
+                    }
+
+                    xpElapsedSum += intervalSeconds;
+                    if (xpDelta > 0.0)
+                    {
+                        xpDeltaSum += xpDelta;
+                    }
                 }
             }
 

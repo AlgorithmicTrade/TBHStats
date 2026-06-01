@@ -68,7 +68,10 @@ public static class Composition
         // TabDetector зависит от IOcrReader и ITabNameMatcher
         services.AddSingleton<ITabDetector, TabDetector>();
 
-        // FieldExtractor зависит от IOcrReader и IValueParser
+        // ChestLayoutResolver: stateless singleton
+        services.AddSingleton<IChestLayoutResolver, ChestLayoutResolver>();
+
+        // FieldExtractor зависит от IOcrReader, IValueParser и IChestLayoutResolver
         services.AddSingleton<IFieldExtractor, FieldExtractor>();
 
         // CaptureSession: создаётся как singleton; принимает IGameWindowTracker через DI.
@@ -114,7 +117,8 @@ public static class Composition
             new CalibrationViewModel(
                 new ScopedSettingsRepositoryProxy(sp),
                 sp.GetRequiredService<IGameMechanics>(),
-                sp.GetRequiredService<ICaptureSession>()));
+                sp.GetRequiredService<ICaptureSession>(),
+                sp.GetRequiredService<IOcrReader>()));
 
         // StatsOrchestrator: singleton, зависит от сингтонов Capture/Core и scoped Data.
         // Scoped ISettingsRepository доступен через IServiceScopeFactory внутри петли
@@ -134,6 +138,7 @@ public static class Composition
                 metricsCalculator:  sp.GetRequiredService<IMetricsCalculator>(),
                 gameMechanics:      sp.GetRequiredService<IGameMechanics>(),
                 settingsRepository: settingsProxy,
+                ocrReader:          sp.GetRequiredService<IOcrReader>(),
                 logger:             sp.GetRequiredService<ILogger<StatsOrchestrator>>(),
                 runRecorder:        sp.GetRequiredService<RunRecorder>());
         });

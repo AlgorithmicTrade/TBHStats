@@ -21,8 +21,9 @@ namespace TBHStats.Capture.Ocr;
 /// Алгоритм:
 /// <list type="number">
 ///   <item>ROI → пиксели через <see cref="RoiMapper"/>.</item>
-///   <item>Кроп <see cref="SoftwareBitmap"/> к пиксельному прямоугольнику через
-///         <c>BitmapEncoder</c>/<c>BitmapDecoder</c> + <c>BitmapBounds</c>.</item>
+///   <item>Кроп <see cref="SoftwareBitmap"/> к пиксельному прямоугольнику через прямой доступ
+///         к пикселям кадра (без BMP-кодека). Полнокадровый буфер кэшируется на уровне кадра
+///         (ключ — ссылка <c>ReferenceEquals</c>); sub-rect вырезается построчной копией.</item>
 ///   <item>Распознавание кропа через <c>WinOcrEngine.RecognizeAsync</c>.</item>
 ///   <item>Confidence вычисляется как геометрическое покрытие: отношение суммарной площади
 ///         bounding-box'ов слов к площади ROI (clamp [0..1]).</item>
@@ -41,6 +42,15 @@ public sealed class OcrReader : IOcrReader
     private WinOcrEngine? _engine;
     private bool _engineInitialized;
     private readonly object _engineLock = new();
+
+    // ── кэш пиксельного буфера кадра ─────────────────────────────────────────
+    // Храним только скопированные байты и метаданные; ссылку на SoftwareBitmap —
+    // исключительно для идентификации по ReferenceEquals. Не диспозим чужой кадр.
+    private SoftwareBitmap? _cachedBitmapKey;
+    private byte[]?         _cachedPixels;
+    private int             _cachedWidth;
+    private int             _cachedHeight;
+    private int             _cachedStride;
 
     // ── публичный API ─────────────────────────────────────────────────────────
 
@@ -61,13 +71,26 @@ public sealed class OcrReader : IOcrReader
         if (pixelRect.IsEmpty)
             return NotRecognized;
 
-        // Кроп SoftwareBitmap к ROI-прямоугольнику
-        using SoftwareBitmap? cropped = await CropAsync(frame.Bitmap, pixelRect, ct).ConfigureAwait(false);
+        // Получить или заполнить кэш пиксельного буфера кадра.
+        // Копирование буфера выполняется вне lock, чтобы не блокировать конкурентный вызов дольше необходимого.
+        byte[] framePixels;
+        int    frameWidth;
+        int    frameHeight;
+        int    frameStride;
+
+        (framePixels, frameWidth, frameHeight, frameStride) = GetOrFillFrameCache(frame.Bitmap);
+
+        // Кроп sub-rect из managed-буфера (синхронно, без кодека)
+        using SoftwareBitmap? cropped = CropFromBuffer(
+            framePixels, frameWidth, frameHeight, frameStride, pixelRect);
         if (cropped is null)
             return NotRecognized;
 
+        // Апскейл маленьких кропов (Windows.Media.Ocr не читает слишком мелкие изображения).
+        SoftwareBitmap ocrInput = await UpscaleForOcrAsync(cropped, WinOcrEngine.MaxImageDimension, ct).ConfigureAwait(false);
+
         // Конвертировать в формат, требуемый WinOcrEngine (Bgra8 Premultiplied)
-        SoftwareBitmap bitmapForOcr = EnsureOcrFormat(cropped);
+        SoftwareBitmap bitmapForOcr = EnsureOcrFormat(ocrInput);
         try
         {
             WinOcrResult winResult = await engine.RecognizeAsync(bitmapForOcr)
@@ -76,17 +99,21 @@ public sealed class OcrReader : IOcrReader
 
             string rawText = winResult.Text ?? string.Empty;
             bool recognized = !string.IsNullOrWhiteSpace(rawText);
+            // Покрытие считаем относительно площади изображения, по которому реально работал OCR.
             double confidence = recognized
-                ? ComputeGeometricConfidence(winResult, pixelRect)
+                ? ComputeGeometricConfidence(winResult, bitmapForOcr.PixelWidth, bitmapForOcr.PixelHeight)
                 : 0.0;
 
             return new OcrResult(rawText, confidence, recognized);
         }
         finally
         {
-            // Освобождаем конвертированный bitmap только если он — новый объект (не тот же, что cropped)
-            if (!ReferenceEquals(bitmapForOcr, cropped))
+            // Освобождаем конвертированный bitmap только если он — новый объект (не тот же, что ocrInput)
+            if (!ReferenceEquals(bitmapForOcr, ocrInput))
                 bitmapForOcr.Dispose();
+            // Освобождаем апскейленный bitmap только если он — новый объект (не тот же, что cropped)
+            if (!ReferenceEquals(ocrInput, cropped))
+                ocrInput.Dispose();
         }
     }
 
@@ -116,76 +143,93 @@ public sealed class OcrReader : IOcrReader
         return _engine;
     }
 
-    /// <summary>
-    /// Обрезает <paramref name="source"/> до <paramref name="rect"/> через кодек в памяти.
-    /// Использует <c>BitmapEncoder</c>/<c>BitmapDecoder</c> с <c>BitmapTransform.Bounds</c>
-    /// для извлечения суб-региона без ручного попиксельного копирования.
-    /// Возвращает <c>null</c>, если кроп не удался.
-    /// </summary>
-    private static async Task<SoftwareBitmap?> CropAsync(
-        SoftwareBitmap source,
-        RoiPixelRect rect,
-        CancellationToken ct)
-    {
-        // Клампинг к фактическим размерам исходного bitmap
-        int srcW = source.PixelWidth;
-        int srcH = source.PixelHeight;
+    // ── кэш пиксельного буфера ────────────────────────────────────────────────
 
-        int x = Math.Clamp(rect.X, 0, srcW);
-        int y = Math.Clamp(rect.Y, 0, srcH);
-        int w = Math.Clamp(rect.Width, 0, srcW - x);
-        int h = Math.Clamp(rect.Height, 0, srcH - y);
+    /// <summary>
+    /// Возвращает (pixels, width, height, stride) для <paramref name="bitmap"/>.
+    /// При промахе — конвертирует в Bgra8 Premultiplied (если нужно), копирует весь буфер
+    /// через <c>SoftwareBitmap.CopyToBuffer</c> + managed <c>IBuffer</c>,
+    /// сохраняет в кэш. При попадании — возвращает кэшированные данные без копирования.
+    /// Доступ к кэшу защищён <c>_engineLock</c> (тот же объект, что и для движка).
+    /// </summary>
+    private (byte[] pixels, int width, int height, int stride) GetOrFillFrameCache(SoftwareBitmap bitmap)
+    {
+        lock (_engineLock)
+        {
+            if (ReferenceEquals(_cachedBitmapKey, bitmap) && _cachedPixels is not null)
+                return (_cachedPixels, _cachedWidth, _cachedHeight, _cachedStride);
+        }
+
+        // Промах — копируем буфер вне lock (самая длинная часть).
+        // Если bitmap не Bgra8 Premultiplied — конвертируем во временный объект.
+        SoftwareBitmap? converted = null;
+        SoftwareBitmap src = bitmap;
+
+        if (bitmap.BitmapPixelFormat != BitmapPixelFormat.Bgra8
+            || bitmap.BitmapAlphaMode != BitmapAlphaMode.Premultiplied)
+        {
+            converted = SoftwareBitmap.Convert(bitmap, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+            src = converted;
+        }
+
+        int width   = src.PixelWidth;
+        int height  = src.PixelHeight;
+        // Bgra8 — 4 байта на пиксель; stride выровнен на 4 байта (всегда width*4 для Bgra8).
+        int stride  = width * 4;
+        int bufSize = stride * height;
+
+        byte[] pixels = new byte[bufSize];
+
+        // SoftwareBitmap.CopyToBuffer — чистый WinRT-метод без COM-interop/unsafe.
+        src.CopyToBuffer(pixels.AsBuffer());
+
+        converted?.Dispose();
+
+        lock (_engineLock)
+        {
+            _cachedBitmapKey = bitmap;
+            _cachedPixels    = pixels;
+            _cachedWidth     = width;
+            _cachedHeight    = height;
+            _cachedStride    = stride;
+        }
+
+        return (pixels, width, height, stride);
+    }
+
+    /// <summary>
+    /// Вырезает sub-rect из managed-буфера пикселей Bgra8 построчной копией.
+    /// Возвращает <c>null</c>, если прямоугольник пуст или выходит за границы после клампинга.
+    /// Не использует кодек — работает в O(w*h) с одним <c>new SoftwareBitmap</c>.
+    /// </summary>
+    private static SoftwareBitmap? CropFromBuffer(
+        byte[] srcPixels,
+        int    srcWidth,
+        int    srcHeight,
+        int    srcStride,
+        RoiPixelRect rect)
+    {
+        int x = Math.Clamp(rect.X, 0, srcWidth);
+        int y = Math.Clamp(rect.Y, 0, srcHeight);
+        int w = Math.Clamp(rect.Width,  0, srcWidth  - x);
+        int h = Math.Clamp(rect.Height, 0, srcHeight - y);
 
         if (w <= 0 || h <= 0)
             return null;
 
-        ct.ThrowIfCancellationRequested();
+        const int bytesPerPixel = 4; // Bgra8
+        int dstStride = w * bytesPerPixel;
+        byte[] dstPixels = new byte[dstStride * h];
 
-        using InMemoryRandomAccessStream stream = new();
-
-        // Шаг 1: записать исходный bitmap в поток через BmpEncoder
-        BitmapEncoder encoder = await BitmapEncoder
-            .CreateAsync(BitmapEncoder.BmpEncoderId, stream)
-            .AsTask(ct)
-            .ConfigureAwait(false);
-
-        encoder.SetSoftwareBitmap(source);
-        await encoder.FlushAsync()
-            .AsTask(ct)
-            .ConfigureAwait(false);
-
-        // Шаг 2: декодировать с BitmapTransform.Bounds → получить суб-регион
-        stream.Seek(0);
-        BitmapDecoder decoder = await BitmapDecoder
-            .CreateAsync(stream)
-            .AsTask(ct)
-            .ConfigureAwait(false);
-
-        BitmapTransform transform = new()
+        for (int row = 0; row < h; row++)
         {
-            Bounds = new BitmapBounds
-            {
-                X      = (uint)x,
-                Y      = (uint)y,
-                Width  = (uint)w,
-                Height = (uint)h,
-            }
-        };
-
-        PixelDataProvider pixelData = await decoder
-            .GetPixelDataAsync(
-                BitmapPixelFormat.Bgra8,
-                BitmapAlphaMode.Premultiplied,
-                transform,
-                ExifOrientationMode.IgnoreExifOrientation,
-                ColorManagementMode.DoNotColorManage)
-            .AsTask(ct)
-            .ConfigureAwait(false);
-
-        byte[] pixels = pixelData.DetachPixelData();
+            int srcOffset = (y + row) * srcStride + x * bytesPerPixel;
+            int dstOffset = row * dstStride;
+            System.Buffer.BlockCopy(srcPixels, srcOffset, dstPixels, dstOffset, dstStride);
+        }
 
         SoftwareBitmap cropped = new(BitmapPixelFormat.Bgra8, w, h, BitmapAlphaMode.Premultiplied);
-        cropped.CopyFromBuffer(pixels.AsBuffer());
+        cropped.CopyFromBuffer(dstPixels.AsBuffer());
         return cropped;
     }
 
@@ -207,19 +251,24 @@ public sealed class OcrReader : IOcrReader
 
     /// <summary>
     /// Вычисляет эвристику достоверности OCR как геометрическое покрытие:
-    /// ∑(wordBoundsArea) / roiArea, clamp [0..1].
+    /// ∑(wordBoundsArea) / imageArea, clamp [0..1].
     /// </summary>
+    /// <param name="ocrResult">Результат <c>WinOcrEngine.RecognizeAsync</c>.</param>
+    /// <param name="imageWidth">Ширина изображения, по которому реально работал OCR (после апскейла).</param>
+    /// <param name="imageHeight">Высота изображения, по которому реально работал OCR (после апскейла).</param>
     /// <remarks>
     /// Windows.Media.Ocr не предоставляет числовую confidence per-word.
-    /// Геометрическое покрытие — аппроксимация: чем больше площади ROI «объяснено»
+    /// Геометрическое покрытие — аппроксимация: чем больше площади изображения «объяснено»
     /// распознанными словами, тем выше вероятность корректного результата.
     /// Для коротких числовых строк (gold, xp и т.д.) значение близко к 0,1–0,4 при успехе
     /// и равно 0 при отсутствии текста.
+    /// Площадь берётся по реальному OCR-входу (после апскейла), чтобы bounding-box'ы
+    /// в увеличенных координатах не искажали покрытие относительно исходного ROI.
     /// </remarks>
-    private static double ComputeGeometricConfidence(WinOcrResult ocrResult, RoiPixelRect roiRect)
+    private static double ComputeGeometricConfidence(WinOcrResult ocrResult, int imageWidth, int imageHeight)
     {
-        double roiArea = (double)roiRect.Width * roiRect.Height;
-        if (roiArea <= 0)
+        double imageArea = (double)imageWidth * imageHeight;
+        if (imageArea <= 0)
             return 0.0;
 
         double coveredArea = 0.0;
@@ -232,6 +281,90 @@ public sealed class OcrReader : IOcrReader
             }
         }
 
-        return Math.Clamp(coveredArea / roiArea, 0.0, 1.0);
+        return Math.Clamp(coveredArea / imageArea, 0.0, 1.0);
+    }
+
+    // ── апскейл маленьких кропов ──────────────────────────────────────────────
+
+    /// <summary>Целевой минимум меньшей стороны кропа для надёжного OCR.</summary>
+    /// <remarks>
+    /// Windows.Media.Ocr возвращает пустой результат на изображениях, у которых меньшая
+    /// сторона значительно меньше этого порога (эмпирически подтверждено: gold ≈109×27px,
+    /// xp ≈144×20px, heroLevel ≈118×24px — пусто; крупные ROI читаются).
+    /// Повышено с 64 до 96: мелкие поля (heroLevel "26"/"27") нестабильно распознавались
+    /// при меньшем пороге — больший апскейл повышает надёжность.
+    /// </remarks>
+    private const int MinOcrDimension = 96;
+
+    /// <summary>
+    /// Возвращает версию <paramref name="cropped"/>, увеличенную целочисленным множителем так,
+    /// чтобы меньшая сторона была не менее <see cref="MinOcrDimension"/> (Windows.Media.Ocr
+    /// не распознаёт слишком маленькие изображения). Если апскейл не нужен — возвращает тот же объект.
+    /// Масштаб ограничен <paramref name="maxDimension"/>, чтобы не превысить лимит движка.
+    /// </summary>
+    private static async Task<SoftwareBitmap> UpscaleForOcrAsync(
+        SoftwareBitmap cropped,
+        uint maxDimension,
+        CancellationToken ct)
+    {
+        int w = cropped.PixelWidth;
+        int h = cropped.PixelHeight;
+        int minDim = Math.Min(w, h);
+
+        if (minDim <= 0 || minDim >= MinOcrDimension)
+            return cropped;
+
+        int scale = (int)Math.Ceiling((double)MinOcrDimension / minDim);
+        int cap = maxDimension > 0 ? (int)maxDimension : 4096;
+
+        while (scale > 1 && ((long)w * scale > cap || (long)h * scale > cap))
+            scale--;
+
+        if (scale <= 1)
+            return cropped;
+
+        uint sw = (uint)(w * scale);
+        uint sh = (uint)(h * scale);
+
+        using InMemoryRandomAccessStream stream = new();
+
+        BitmapEncoder encoder = await BitmapEncoder
+            .CreateAsync(BitmapEncoder.BmpEncoderId, stream)
+            .AsTask(ct)
+            .ConfigureAwait(false);
+
+        encoder.SetSoftwareBitmap(cropped);
+        await encoder.FlushAsync()
+            .AsTask(ct)
+            .ConfigureAwait(false);
+
+        stream.Seek(0);
+        BitmapDecoder decoder = await BitmapDecoder
+            .CreateAsync(stream)
+            .AsTask(ct)
+            .ConfigureAwait(false);
+
+        BitmapTransform transform = new()
+        {
+            ScaledWidth  = sw,
+            ScaledHeight = sh,
+            InterpolationMode = BitmapInterpolationMode.Fant,
+        };
+
+        PixelDataProvider pixelData = await decoder
+            .GetPixelDataAsync(
+                BitmapPixelFormat.Bgra8,
+                BitmapAlphaMode.Premultiplied,
+                transform,
+                ExifOrientationMode.IgnoreExifOrientation,
+                ColorManagementMode.DoNotColorManage)
+            .AsTask(ct)
+            .ConfigureAwait(false);
+
+        byte[] pixels = pixelData.DetachPixelData();
+
+        SoftwareBitmap upscaled = new(BitmapPixelFormat.Bgra8, (int)sw, (int)sh, BitmapAlphaMode.Premultiplied);
+        upscaled.CopyFromBuffer(pixels.AsBuffer());
+        return upscaled;
     }
 }

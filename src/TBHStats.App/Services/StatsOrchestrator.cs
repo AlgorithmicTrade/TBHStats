@@ -1,5 +1,7 @@
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using TBHStats.Capture;
+using TBHStats.Capture.Ocr;
 using TBHStats.Capture.Tabs;
 using TBHStats.Capture.Wgc;
 using TBHStats.Core.Mechanics;
@@ -37,6 +39,7 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     private readonly IMetricsCalculator _metricsCalculator;
     private readonly IGameMechanics _gameMechanics;
     private readonly ISettingsRepository _settingsRepository;
+    private readonly IOcrReader _ocrReader;
     private readonly ILogger<StatsOrchestrator> _logger;
     private readonly RunRecorder? _runRecorder;
 
@@ -45,7 +48,15 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     /// <summary>
     /// Минимальная уверенность OCR для принятия значения поля (R4, FR-005/FR-010).
     /// </summary>
-    private const double ConfidenceThreshold = 0.6;
+    /// <remarks>
+    /// Уверенность здесь — геометрическое покрытие (доля площади ROI, занятая распознанным текстом),
+    /// а НЕ вероятностная достоверность. Для коротких числовых полей покрытие объективно низкое:
+    /// на живой игре корректные чтения дают 0.08–0.48 (напр. heroLevel «27» → 0.08, gold → 0.23).
+    /// Поэтому порог низкий — он лишь отсекает почти-пустой шум; основная валидация значений
+    /// выполняется парсером (число/время/этап обязаны корректно распарситься) и sanity-проверками
+    /// (монотонность золота и т.п.) в <c>IObservationValidator</c>.
+    /// </remarks>
+    private const double ConfidenceThreshold = 0.02;
 
     /// <summary>
     /// Максимальный размер скользящего буфера надёжных сэмплов.
@@ -70,10 +81,24 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
 
     /// <summary>Последние известные «живые» значения, показываемые пока State=Waiting/NotFound.</summary>
     private long? _lastKnownGold;
+    private long? _lastKnownXp;
+    private long? _lastKnownXpToLevel;
     private int? _lastKnownHeroLevel;
     private string? _lastKnownHeroClass;
     private long? _lastKnownHeroDamage;
     private StageRef? _lastKnownStage;
+    private IReadOnlyDictionary<int, int> _lastKnownChests = new Dictionary<int, int>();
+
+    // ── EMA-сглаживание темпов (FR-006; сглаживание дёрганья OCR по ~5 снимкам) ──
+    // α = 2/(N+1), N=5 → 1/3. Сглаживаем публикуемые золото/ч и опыт/ч; «До уровня» считается
+    // по сглаженному опыт/ч. null = ещё не инициализировано (первое значение берётся как есть).
+    private const double EmaAlpha = 2.0 / (5 + 1);
+    private double? _emaGoldPerHour;
+    private double? _emaXpPerHour;
+    private IReadOnlyDictionary<int, double> _lastChestPerHour = new Dictionary<int, double>();
+
+    /// <summary>Время последнего диагностического лога здоровья захвата (UTC). Throttle ~30 с.</summary>
+    private DateTime _lastHealthLogUtc = DateTime.MinValue;
 
     // ── Управление петлёй ──────────────────────────────────────────────────
 
@@ -105,6 +130,7 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         IMetricsCalculator metricsCalculator,
         IGameMechanics gameMechanics,
         ISettingsRepository settingsRepository,
+        IOcrReader ocrReader,
         ILogger<StatsOrchestrator> logger,
         RunRecorder? runRecorder = null)
     {
@@ -115,6 +141,7 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         ArgumentNullException.ThrowIfNull(metricsCalculator);
         ArgumentNullException.ThrowIfNull(gameMechanics);
         ArgumentNullException.ThrowIfNull(settingsRepository);
+        ArgumentNullException.ThrowIfNull(ocrReader);
         ArgumentNullException.ThrowIfNull(logger);
 
         _session            = session;
@@ -124,6 +151,7 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         _metricsCalculator  = metricsCalculator;
         _gameMechanics      = gameMechanics;
         _settingsRepository = settingsRepository;
+        _ocrReader          = ocrReader;
         _logger             = logger;
         _runRecorder        = runRecorder;
     }
@@ -188,13 +216,12 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     {
         _logger.LogInformation("Петля захвата запущена.");
 
-        // Кэш настроек: перечитываем при необходимости
+        // ROI-калибровки: объявляем до цикла, чтобы при исключении сохранялся последний успешный набор.
         IReadOnlyList<RoiCalibration> rois = Array.Empty<RoiCalibration>();
-        bool roisLoaded = false;
 
         while (!ct.IsCancellationRequested)
         {
-            // ── Получить интервал опроса из настроек ─────────────────────────
+            // ── Получить интервал опроса и ROI-калибровки из настроек ────────
             int pollIntervalMs = 1500;
             try
             {
@@ -202,18 +229,15 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
                     .ConfigureAwait(false);
                 pollIntervalMs = settings.PollIntervalMs > 0 ? settings.PollIntervalMs : 1500;
 
-                // Загружаем ROI-калибровки (однократно; перезагружаем при изменении настроек,
-                // но для v1 достаточно загрузить один раз в начале каждой итерации только если не загружены).
-                if (!roisLoaded)
-                {
-                    rois = await _settingsRepository.GetRoiCalibrationsAsync()
-                        .ConfigureAwait(false);
-                    roisLoaded = true;
-                }
+                // Перечитываем ROI каждую итерацию: калибровка применяется без перезапуска приложения
+                // (ранее латч roisLoaded грузил их один раз — изменения калибровки игнорировались до рестарта).
+                // SELECT по таблице ~21 строки ничтожен по стоимости — settings читаются так же каждую итерацию.
+                rois = await _settingsRepository.GetRoiCalibrationsAsync()
+                    .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogWarning(ex, "Не удалось прочитать настройки; используется интервал по умолчанию.");
+                _logger.LogWarning(ex, "Не удалось прочитать настройки/калибровки; используется предыдущий набор ROI.");
             }
 
             // ── Получить кадр ────────────────────────────────────────────────
@@ -293,6 +317,59 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         // ── Валидация → MetricSample ──────────────────────────────────────────
         MetricSample sample = _validator.Validate(obs, _lastReliableSample, ConfidenceThreshold);
 
+        // ── Диагностика здоровья захвата (throttled ~30 с, только когда нет достоверных данных) ──
+        if (!sample.IsReliable)
+        {
+            DateTime nowUtc = DateTime.UtcNow;
+            if ((nowUtc - _lastHealthLogUtc).TotalSeconds >= 30)
+            {
+                _lastHealthLogUtc = nowUtc;
+                string activeTabKey = activeTab?.Key ?? "none";
+                string recognized = obs.PerFieldConfidence.Count > 0
+                    ? string.Join(", ", obs.PerFieldConfidence.Select(kv => $"{kv.Key}={kv.Value:F2}"))
+                    : "(нет распознанных полей)";
+                _logger.LogInformation(
+                    "Захват активен, но достоверных данных нет. ROI={RoiCount}, activeTab={ActiveTab}, распознано: {Recognized}",
+                    rois.Count, activeTabKey, recognized);
+
+                // ВРЕМЕННАЯ ДИАГНОСТИКА (удалить после решения проблемы пустых значений):
+                // сырой OCR-текст ключевых ROI + размеры кадра.
+                _logger.LogInformation(
+                    "[Diag] bitmap={Bw}x{Bh} client={Cw}x{Ch} ROI={Count}",
+                    frame.Bitmap.PixelWidth, frame.Bitmap.PixelHeight,
+                    frame.ClientSize.Width, frame.ClientSize.Height, rois.Count);
+
+                foreach (string key in new[] { "activeTab", "gold", "xp", "heroLevel" })
+                {
+                    RoiCalibration? r = null;
+                    foreach (RoiCalibration cand in rois)
+                        if (string.Equals(cand.FieldKey, key, StringComparison.OrdinalIgnoreCase)) { r = cand; break; }
+
+                    if (r is null)
+                    {
+                        _logger.LogInformation("[Diag] {Key}: ROI не задан", key);
+                        continue;
+                    }
+
+                    try
+                    {
+                        OcrResult dr = await _ocrReader.ReadAsync(frame, r, ct).ConfigureAwait(false);
+                        string text = dr.RawText is { Length: > 0 } ? dr.RawText.Replace("\r", " ").Replace("\n", " ") : "";
+                        if (text.Length > 80) text = text[..80];
+                        _logger.LogInformation(
+                            "[Diag] {Key}: rec={Rec} conf={Conf:F2} text='{Text}'",
+                            key, dr.Recognized, dr.Confidence, text);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        _logger.LogInformation("[Diag] {Key}: ошибка OCR {Err}", key, ex.Message);
+                    }
+                }
+                // КОНЕЦ ВРЕМЕННОЙ ДИАГНОСТИКИ
+            }
+        }
+
         // ── Обновить скользящий буфер и последний надёжный сэмпл ─────────────
         if (sample.IsReliable)
         {
@@ -317,10 +394,16 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
             }
         }
 
-        // ── Вычислить темпы ───────────────────────────────────────────────────
-        LiveRates rates = _reliableBuffer.Count > 1
+        // ── Вычислить темпы + EMA-сглаживание ─────────────────────────────────
+        LiveRates raw = _reliableBuffer.Count > 1
             ? _metricsCalculator.ComputeLiveRates(_reliableBuffer)
             : new LiveRates(0, 0, new Dictionary<int, double>());
+
+        _emaGoldPerHour = Ema(_emaGoldPerHour, raw.GoldPerHour);
+        _emaXpPerHour   = Ema(_emaXpPerHour, raw.XpPerHour);
+        _lastChestPerHour = raw.ChestPerHourByType;
+
+        LiveRates rates = new(_emaGoldPerHour.Value, _emaXpPerHour.Value, _lastChestPerHour);
 
         // ── Собрать и опубликовать снимок ─────────────────────────────────────
         DateTime? lastReliableUtc = _lastReliableSample?.TakenAtUtc;
@@ -330,12 +413,15 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
             State:           CaptureState.Capturing,
             Rates:           rates,
             Gold:            _lastKnownGold,
+            Xp:              _lastKnownXp,
+            XpToLevel:       _lastKnownXpToLevel,
             HeroLevel:       _lastKnownHeroLevel,
             HeroClass:       _lastKnownHeroClass,
             HeroDamage:      _lastKnownHeroDamage,
             Stage:           _lastKnownStage,
             LastReliableUtc: lastReliableUtc,
-            IsStale:         isStale));
+            IsStale:         isStale,
+            Chests:          _lastKnownChests));
     }
 
     // ── Вспомогательные методы ─────────────────────────────────────────────────
@@ -346,20 +432,22 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     /// </summary>
     private void PublishStaleSnapshot(CaptureState state)
     {
-        LiveRates rates = _reliableBuffer.Count > 1
-            ? _metricsCalculator.ComputeLiveRates(_reliableBuffer)
-            : new LiveRates(0, 0, new Dictionary<int, double>());
+        // Используем последние сглаженные темпы (EMA не обновляем — окно недоступно).
+        LiveRates rates = new(_emaGoldPerHour ?? 0.0, _emaXpPerHour ?? 0.0, _lastChestPerHour);
 
         PublishSnapshot(new LiveStatsSnapshot(
             State:           state,
             Rates:           rates,
             Gold:            _lastKnownGold,
+            Xp:              _lastKnownXp,
+            XpToLevel:       _lastKnownXpToLevel,
             HeroLevel:       _lastKnownHeroLevel,
             HeroClass:       _lastKnownHeroClass,
             HeroDamage:      _lastKnownHeroDamage,
             Stage:           _lastKnownStage,
             LastReliableUtc: _lastReliableSample?.TakenAtUtc,
-            IsStale:         true));
+            IsStale:         true,
+            Chests:          _lastKnownChests));
     }
 
     /// <summary>
@@ -401,6 +489,10 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     {
         if (sample.Gold.HasValue)
             _lastKnownGold = sample.Gold;
+        if (sample.Xp.HasValue)
+            _lastKnownXp = sample.Xp;
+        if (sample.XpToLevel.HasValue)
+            _lastKnownXpToLevel = sample.XpToLevel;
         if (sample.HeroLevel.HasValue)
             _lastKnownHeroLevel = sample.HeroLevel;
         if (sample.HeroDamage.HasValue)
@@ -410,12 +502,18 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         if (obs.HeroClassText is not null)
             _lastKnownHeroClass = obs.HeroClassText;
 
-        // Текущий этап — из NextLocation (следующая локация = current+1) или StageRef сэмпла
+        // Текущий этап = nextLocation − 1 (с переносом 10 этапов/акт, ADR-008).
+        // nextLocation — «следующая локация» из MainZone (current+1); вычитаем 1, чтобы показать ТЕКУЩИЙ этап.
         if (sample.NextLocation.HasValue)
         {
-            // NextLocation = current+1; используем как индикатор текущего этапа
-            _lastKnownStage = sample.NextLocation;
+            StageRef? current = sample.NextLocation.Value.Previous();
+            if (current.HasValue)
+                _lastKnownStage = current.Value;
         }
+
+        // Счётчики сундуков транзиентны: обновляем ВСЕГДА при надёжном сэмпле,
+        // даже если список пуст — отражает актуальное состояние OCR-кадра.
+        _lastKnownChests = sample.Chests.ToDictionary(c => c.ChestTypeId, c => c.Count);
     }
 
     /// <summary>
@@ -432,6 +530,13 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
 
         return (DateTime.UtcNow - lastReliableUtc.Value).TotalSeconds > StaleThresholdSeconds;
     }
+
+    /// <summary>
+    /// Экспоненциальное скользящее среднее (EMA) для сглаживания темпов.
+    /// Первое значение принимается как есть; далее prev + α·(raw − prev), α = <see cref="EmaAlpha"/>.
+    /// </summary>
+    private static double Ema(double? previous, double raw)
+        => previous is double p ? p + EmaAlpha * (raw - p) : raw;
 
     /// <summary>
     /// Задержка с поддержкой отмены; не бросает при отмене (только возвращает).

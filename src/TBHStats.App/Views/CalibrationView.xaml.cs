@@ -113,6 +113,9 @@ public sealed partial class CalibrationView : Page
             case nameof(CalibrationViewModel.SelectedItem):
                 TrackSelectedItem(_viewModel?.SelectedItem);
                 RedrawRoiOverlay();
+                // Авто-запуск OCR-предпросмотра при смене выбранного ROI.
+                if (_viewModel?.TestSelectedRoiOcrCommand.CanExecute(null) == true)
+                    DispatcherQueue.TryEnqueue(() => _viewModel.TestSelectedRoiOcrCommand.Execute(null));
                 break;
 
             // Новый кадр захвачен → размер контента изменился: вписать в окно и перерисовать.
@@ -329,6 +332,10 @@ public sealed partial class CalibrationView : Page
 
         // Единственная перерисовка — отложенно, уже ПОСЛЕ завершения pointer-события.
         DispatcherQueue.TryEnqueue(RedrawRoiOverlay);
+
+        // Авто-запуск OCR-предпросмотра после рисования рамки (отложенно, после pointer-события).
+        if (_viewModel?.TestSelectedRoiOcrCommand.CanExecute(null) == true)
+            DispatcherQueue.TryEnqueue(() => _viewModel.TestSelectedRoiOcrCommand.Execute(null));
     }
 
     private void RemoveDragRect()

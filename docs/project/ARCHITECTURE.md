@@ -2,7 +2,7 @@
 
 **Проект**: TBHStats — десктоп-помощник по статистике для игры Task Bar Hero
 **Платформа**: Windows 11 (x64/arm64), один локальный пользователь
-**Дата актуализации**: 2026-05-31 (T008/T015/T014/T013/T009/T010/T022/T023/T024/T025/T026/T028/T035–T042 US2 recency-aware; T043–T046 US3 тренды/ретенция; T047 обработка ошибок и логирование; T048 конфигурация поставки MSIX/unpackaged; T053 accessibility-проход; фикс старта виджета и захвата: XAML-кисти WinUI 3, static-init `GameWindowTrackerOptions`, CsWinRT-маршалинг WGC/D3D11 interop, подсказки заголовка без `"TBH"`; калибровка ROI: живой кадр через общий ICaptureSession + ScrollViewer-зум/панорамирование + рисование рамки мышью по пикселям кадра)
+**Дата актуализации**: 2026-06-01 (мульти-панельный UI — снятие tab-gating, чтение всех полей каждый кадр, апскейл мелких кропов OCR, порог уверенности 0.02, перезагрузка ROI каждую итерацию, кэш-кроп без перекодирования кадра, запятая=десятичная, «Этап»=nextLocation−1, сундуки-точки графические → счёт по изображению P2, отключён always-on-top, виджет-строка «До уровня», EMA-сглаживание темпов + guard level-up/невозможного xp — §3/§5/§9 + ADR-019; мульти-позиционные ROI сундуков по числу типов `N` и детекция раскладки `IChestLayoutResolver`, §4/§9 + ADR-018; объединённая зона опыта `xpPair` с парсингом по `/`, §3/§9; ранее: T008/T015/T014/T013/T009/T010/T022/T023/T024/T025/T026/T028/T035–T042 US2 recency-aware; T043–T046 US3 тренды/ретенция; T047 обработка ошибок и логирование; T048 конфигурация поставки MSIX/unpackaged; T053 accessibility-проход; фикс старта виджета и захвата: XAML-кисти WinUI 3, static-init `GameWindowTrackerOptions`, CsWinRT-маршалинг WGC/D3D11 interop, подсказки заголовка без `"TBH"`; калибровка ROI: живой кадр через общий ICaptureSession + ScrollViewer-зум/панорамирование + рисование рамки мышью по пикселям кадра)
 **Спецификация-источник**: `specs/001-tbh-stats-helper/` (plan, research, data-model, contracts) · конституция `v2.2.0`
 
 > TBHStats наблюдает за окном запущенной игры, **визуально** считывает игровые показатели (золото, опыт, время этапа, класс/уровень/урон героя, текущий этап, сундуки по типам), вычисляет темпы (золото/час, опыт/час, сундуки/час), накапливает историю по 60 этапам (3 акта × 2 сложности × 10) и рекомендует оптимальный этап для фарма. Режим строго **observe-only**: никаких записей в память игры и инъекций ввода.
@@ -89,6 +89,7 @@
 - Встроен в Windows, **0 сторонних зависимостей**, принимает `SoftwareBitmap` (кадр WGC конвертируется напрямую, без записи на диск).
 - Возвращает слова с bounding box → сопоставление с ROI и оценка достоверности по геометрии.
 - **Tesseract** настраивается под цифры через whitelist (`tessedit_char_whitelist=0123456789.,KMB`); per-ROI выбор движка задаётся в калибровке (`RoiCalibration.OcrEngine`).
+- **Объединённые зоны со встроенным разделителем.** Опыт показывается строкой «текущий / до_уровня» (`5 530 764 / 6 266 704`). Вместо двух узких ROI (которые «съезжают» при росте разрядности) поддержан единый широкий ROI `xpPair`: OCR читает строку целиком, `ValueParser.TryParseXpPair` делит её по `/` и парсит обе половины существующим `TryParseAbbreviatedNumber` (пробелы-разряды и суффиксы K/M/B/T). `xpPair` перекрывает отдельные `xp`/`xpToLevel` (которые остаются fallback). См. §9 (поток) и GAME-FACTS.md §9.
 
 **Эмпирический риск**: фактическая точность на конкретном шрифте Task Bar Hero — открытый вопрос, **проверяется на реальных скриншотах** (фикстуры в `TBHStats.Capture.Tests`). Митигация: confidence-порог + sanity-проверки значений + fallback-движок per ROI.
 
@@ -99,7 +100,8 @@
 - `OcrReader` — реальная реализация:
   - Lazy-init `WinOcrEngine` (`TryCreateFromUserProfileLanguages` → fallback `TryCreateFromLanguage("en")`). Если оба null — возвращает `OcrResult("", 0, false)` без исключения.
   - Кроп `SoftwareBitmap` к ROI через `BitmapEncoder` (BMP, in-memory stream) + `BitmapDecoder` с `BitmapTransform.Bounds` — извлекает суб-регион без ручного попиксельного копирования. Конвертация к `Bgra8/Premultiplied` через `SoftwareBitmap.Convert` при необходимости.
-  - **Confidence-эвристика**: `∑(wordBoundsArea) / roiArea`, clamp [0..1]. Windows.Media.Ocr не возвращает числовую confidence per-word, поэтому геометрическое покрытие служит прокси достоверности.
+  - **Апскейл мелких кропов (ADR-019):** Windows.Media.Ocr не распознаёт слишком маленькие изображения (мелкие поля gold/xp/heroLevel высотой 18–27px → пусто). Если меньшая сторона кропа < 64px — апскейл целочисленным множителем (cap по `OcrEngine.MaxImageDimension`, интерполяция Fant) перед `RecognizeAsync`. Подтверждено на живой игре + Microsoft Q&A.
+  - **Confidence-эвристика**: `∑(wordBoundsArea) / imageArea` (площадь реального OCR-входа, т.е. после апскейла), clamp [0..1]. Windows.Media.Ocr не возвращает числовую confidence per-word, поэтому геометрическое покрытие служит слабым прокси; для коротких чисел значения низкие (0.08–0.48), поэтому порог приёма понижен до 0.02 (ADR-019), а основная валидация — парсер+sanity.
   - Возвращает `OcrResult("", 0, false)` при: недоступном движке, пустом ROI, ошибке отмены (кроме `OperationCanceledException`, который пробрасывается).
 
 ---
@@ -120,6 +122,14 @@
 - `RoiMapper` — реализация: клампинг входных долей к `[0..1]`; `Math.Round(MidpointRounding.AwayFromZero)` для предсказуемости; итоговый прямоугольник клампируется по границам кадра (`[0..width]` / `[0..height]`); при `SizePx.Empty` → `RoiPixelRect.Empty` (без исключения).
 - `ToNormalized` — обратное преобразование для калибровки: пиксели пользователя → нормализованные доли для `RoiCalibration`.
 
+**Мульти-позиционные ROI сундуков (раскладка по числу типов, ADR-018):**
+Иконка каждого типа сундука в MainZone смещается в зависимости от числа одновременно присутствующих типов `N` (1/2/3) — группа иконок центрируется (см. GAME-FACTS.md §6). Поэтому ROI хранятся **до трёх на тип** через суффикс в `FieldKey`: `chest:<тип>@1`, `chest:<тип>@2`, `chest:<тип>@3` (где `N` — число присутствующих типов). Базовый ключ без суффикса (`chest:<тип>`) сохранён как легаси «одна фиксированная позиция».
+
+- **Схема БД не меняется** — `RoiCalibration.FieldKey` уже строковый (`HasMaxLength(128)`); миграция не требуется.
+- Разбор ключа — `ChestFieldKey.TryParse(fieldKey, out chestKey, out slotCount)` (`TBHStats.Core/Parsing`).
+- `@N`-ключи предлагаются в калибровке автоматически: `GameMechanicsConfig.CreateDefault()` генерирует их программно (config-driven, ADR-009) в `FieldSourceBindings` для каждого активного типа × `N∈{1,2,3}`.
+- **Детекция активной раскладки** — чистый домен `IChestLayoutResolver`/`ChestLayoutResolver` (`TBHStats.Core/Parsing`). Опираясь на факт «иконка пропадает при 0 → присутствует ⟺ `count ≥ 1`», алгоритм работает на одном OCR без анализа иконок: перебор `N` от большего к меньшему, выбор раскладки с **точным совпадением `litCount == N`** (число «горящих» `count≥1` ROI равно `N`); при неоднозначности приоритет большему `N`; иначе fallback на `N` с максимальным `litCount > 0`; иначе `ChosenSlotCount = 0` (сундуков нет). Эмпирически донастраивается на живой игре (T049/T051).
+
 ---
 
 ## 5. Детекция активной вкладки
@@ -128,8 +138,9 @@
 
 - Названия вкладок «чётко читаемы» → текстовый матч надёжнее числового OCR.
 - В игре **9 именованных разделов**; источниками данных служат `Hero` (золото), `Status` (level/EXP/урон), `Portal` (акт/сложность/этап). `MainZone` (основная зона) видима всегда и вкладкой не является.
-- Поля привязаны к источнику (`Source = MainZone | Tab`): на каждом кадре читаются только **доступные** поля — `MainZone` всегда + поля той вкладки, что сейчас активна (FR-002b).
-- **Никакого автопереключения** (observe-only): значения вкладок обновляются оппортунистически, когда игрок сам открыл раздел. Если активная вкладка не определена достоверно — поля `Source=Tab` пропускаются, `MainZone`-поля продолжают читаться.
+- **Обновление (ADR-019, 2026-06-01):** на живой игре подтверждено, что разделы открыты **одновременно** (3 слота над MainZone + оверлей Rune — GAME-FACTS §2). Прежний gating по «единственной активной вкладке» (FR-002b) к этому UI **не применим и снят**: `FieldExtractor` читает **все** калиброванные поля каждый кадр с их фиксированных позиций, независимо от `activeTab`. Валидация — парсером (значение обязано распарситься) и sanity-проверками; закрытый раздел/чужой слот не даёт валидного значения → поле сохраняет прежнее. Детекция активной вкладки (`ITabDetector`/`activeTab`) для чтения полей не используется (поле `RawObservation.ActiveTab` — информационное).
+- **Никакого автопереключения** (observe-only): значения обновляются оппортунистически, когда нужный раздел открыт игроком в своём слоте.
+- *(Историческое)* Описание ниже про текстовую детекцию активной вкладки сохранено как референс реализации `ITabDetector`, но в live-петле она больше не гейтит поля.
 
 **Реализация (T022):**
 - `ITabNameMatcher` — чистый шов (без WGC/OCR-зависимостей): `TabRef? Match(string recognizedText, GameMechanicsConfig cfg, double minSimilarity = 0.6)`.
@@ -347,11 +358,12 @@ tests/
   (ROI «activeTab»)       │                  │                  │
        │                  ▼                  │                  │
        │          ExtractAsync()             │                  │
-       │          (MainZone + активн. вкладка)│                 │
+       │          (все поля каждый кадр,      │                  │
+       │           без tab-gating, ADR-019)   │                  │
        │                  ▼                  │                  │
        │          IObservationValidator      │                  │
        │          .Validate() → MetricSample │                  │
-       │          (confidence ≥ 0.6 + sanity)│                  │
+       │          (confidence ≥ 0.02 + sanity)│                 │
        │                  ▼                  │                  │
        │          IsReliable=true ───────────► скользящий буфер │
        │                                     (≤200 сэмплов)    │
@@ -367,11 +379,11 @@ tests/
 
 Подробно по шагам (`StatsOrchestrator.RunLoopAsync`):
 
-1. Загрузить `WidgetSettings` (интервал опроса) и `RoiCalibrations` (кэш, загружается однократно).
+1. Загрузить `WidgetSettings` (интервал опроса) и `RoiCalibrations` — **перечитываются каждую итерацию**, чтобы калибровка применялась без перезапуска приложения (стоимость SELECT по таблице ~21 строки ничтожна; при ошибке чтения сохраняется предыдущий набор ROI).
 2. `session.TryGetFrameAsync(ct)` → `null` (состояние `session.State` == `NotFound`/`Waiting`) → `PublishStaleSnapshot(session.State)`, задержка, продолжить.
 3. `frame != null` → `State=Capturing`. Найти ROI «activeTab» в калибровках → `tabDetector.DetectActiveTabAsync()`.
 4. `fieldExtractor.ExtractAsync(frame, rois, activeTab, cfg, ct)` → `RawObservation`.
-5. `validator.Validate(obs, _lastReliableSample, 0.6)` → `MetricSample`. Если `IsReliable` → обновить `_lastReliableSample`, добавить в скользящий буфер (≤200 записей), обновить «последние известные» значения.
+5. `validator.Validate(obs, _lastReliableSample, 0.02)` → `MetricSample` (порог уверенности понижен с 0.6 до 0.02, ADR-019: геометрическое покрытие — слабый прокси, основная валидация — парсер+sanity). Если `IsReliable` → обновить `_lastReliableSample`, добавить в скользящий буфер (≤200 записей), обновить «последние известные» значения.
 6. `metrics.ComputeLiveRates(buffer)` (если буфер ≥2 сэмплов) → `LiveRates`.
 7. Собрать `LiveStatsSnapshot`; `IsStale = (State != Capturing) || (lastReliableUtc устарел > 30 c)`. Опубликовать через событие `SnapshotUpdated`.
 8. Исключения захвата/OCR → `logger.LogWarning` + `PublishStaleSnapshot`, без броска наружу. `using (frame)` — `CapturedFrame.Dispose()` гарантирован.
@@ -386,11 +398,15 @@ tests/
 **Реализация (T026)**:
 - `LiveStatsSnapshot` (sealed record) — `src/TBHStats.App/Services/LiveStatsSnapshot.cs`: поля `CaptureState State`, `LiveRates Rates`, `long? Gold`, `int? HeroLevel`, `string? HeroClass`, `long? HeroDamage`, `StageRef? Stage`, `DateTime? LastReliableUtc`, `bool IsStale`. Статик `Empty` — начальное значение.
 - `IStatsOrchestrator` — `src/TBHStats.App/Services/IStatsOrchestrator.cs`: `LiveStatsSnapshot Current`, `event EventHandler<LiveStatsSnapshot>? SnapshotUpdated`, `Task StartAsync(CancellationToken)`, `Task StopAsync()`.
-- `StatsOrchestrator` — `src/TBHStats.App/Services/StatsOrchestrator.cs`: singleton, конструктор принимает 8 зависимостей через DI. `_current` volatile (запись через `_current = snapshot`; WinUI-приложение single-writer). Буфер `_reliableBuffer` ограничен `MaxReliableBufferSize=200`. `ConfidenceThreshold=0.6`. `StaleThresholdSeconds=30`.
+- `StatsOrchestrator` — `src/TBHStats.App/Services/StatsOrchestrator.cs`: singleton, зависимости через DI (вкл. `IOcrReader` для диагностики). `_current` volatile (запись через `_current = snapshot`; WinUI-приложение single-writer). Буфер `_reliableBuffer` ограничен `MaxReliableBufferSize=200`. `ConfidenceThreshold=0.02` (ADR-019). `StaleThresholdSeconds=30`. ROI перечитываются каждую итерацию (калибровка применяется без перезапуска).
 
 **Тонкости домена** (R4):
-- **EXP** показывается в пределах уровня и обнуляется при level-up: прирост считается с учётом `HeroLevel` и `XpToLevel` (добор до полного предыдущего уровня + текущий EXP), а не как убыль.
+- **EXP** показывается в пределах уровня и обнуляется при level-up: прирост считается с учётом `HeroLevel` и `XpToLevel` (добор до полного предыдущего уровня + текущий EXP), а не как убыль. **Защиты от OCR-выбросов (2026-06-01):** level-up компенсация применяется только если предыдущий `Xp` реально у потолка (`≥ 0.8·XpToLevel`) — иначе «инкремент уровня» при низком Xp трактуется как misread `heroLevel` (иначе инжектировался ~весь `XpToLevel` → наблюдался ложный темп ~1.08e9 опыт/ч); интервалы с невозможным чтением (`Xp > XpToLevel`) пропускаются.
+- **Сглаживание темпов (EMA):** публикуемые `золото/ч` и `опыт/ч` сглаживаются EMA (α=2/(5+1), ~5 снимков) в `StatsOrchestrator` — гасит дёрганье OCR; «До уровня» виджета считается по сглаженному `опыт/ч` (`(XpToLevel − Xp)/опыт-ч`).
 - **Сундуки** в MainZone — транзиентные «точки»: растут при выпадении, падают к 0 при открытии. «Получено за забег» = сумма положительных дельт; обнуление = открытие, не потеря. Накопленный итог забега неубывает.
+- **Раскладка сундуков (ADR-018)**: иконка типа имеет до трёх позиций по числу одновременно присутствующих типов `N`. `FieldExtractor`/`IChestLayoutResolver` (инвариант `litCount == N`) выбирают активную раскладку и отдают `count` по типам в `RawObservation.Chests`. Базовые `chest:<тип>` без `@N` — прежний путь «одна позиция». См. §4.
+  - **P2 (ADR-019):** «точки» сундуков **графические, не текст** — OCR их не считает. Счёт точек требует визуального детектора (анализ изображения, как `stageProgress`); инфраструктура `chest@N`+resolver сохраняется, источник счёта меняется с OCR на визуальный.
+- **Текущий этап** в виджете = `nextLocation − 1` (`StageRef.Previous`, перенос 10 этапов/акт, ADR-008).
 - Босс этапа ↔ шанс синего сундука; босс акта (этап «-10») ↔ шанс красного; коричневый — с любого монстра.
 
 ---
@@ -426,7 +442,7 @@ Capturing ──(низкая уверенность OCR)───────�
   - Сигнатура: `Task<RawObservation> ExtractAsync(CapturedFrame, IReadOnlyList<RoiCalibration>, TabRef?, GameMechanicsConfig, CancellationToken)`.
   - Ctor: `FieldExtractor(IOcrReader, IValueParser)`.
   - Правило доступности (FR-002b): `MainZone` всегда; `Tab` — только если `activeTab.Value.TabId == roi.TabId`. `activeTab`-поле не OCR-ится (берётся из параметра). Визуальные поля `stageProgress` / `bossPresent` пропускаются в v1 (детекция в T035 StageCompletionDetector).
-  - FieldKey-маппинг: `gold/xp/xpToLevel/heroDamage` → `TryParseAbbreviatedNumber`; `heroLevel` → `int.TryParse` (≥1); `heroClass` → trimmed text; `stageId` → `StageText` (сырой); `stageTime` → `TryParseStageTimeSeconds`; `nextLocation` → `TryParseStageId`; `chest:<key>` → lookup в `cfg.ChestTypes` + `TryParseAbbreviatedNumber → int`.
+  - FieldKey-маппинг: `gold/xp/xpToLevel/heroDamage` → `TryParseAbbreviatedNumber`; `xpPair` → `TryParseXpPair` (делит по `/`, проставляет `xp`+`xpToLevel`, перекрывает их после цикла); `heroLevel` → `int.TryParse` (≥1); `heroClass` → trimmed text; `stageId` → `StageText` (сырой); `stageTime` → `TryParseStageTimeSeconds`; `nextLocation` → `TryParseNextLocation` (формат «акт-этап» без сложности; сложность берётся дефолтная из конфига; текущий этап = `nextLocation−1`); `chest:<key>[@N]` → lookup в `cfg.ChestTypes` + `TryParseAbbreviatedNumber → int`; `@N`-ключи разрешаются через `IChestLayoutResolver` (см. §4).
   - Неизвестные FieldKey тихо пропускаются; ошибки парсинга не выбрасываются — поле остаётся null (FR-005).
 - `IStageCompletionDetector` / `StageCompletionDetector` — детектор завершения этапа (FR-002, ADR-012, T035). Детерминированная машина состояний без WinRT-зависимостей; потребляет `RawObservation`, возвращает `StageCompletionEvent?`.
   - Состояния: `InProgress` (бос ещё не виден) → `BossEngaged` (босс замечен) → обратно `InProgress` (событие выдано).
@@ -472,7 +488,7 @@ Capturing ──(низкая уверенность OCR)───────�
 - **Tabs** (9): hero, stash, status, runes, cube, portal, settings, tradeship, mailbox (IsDataSource: hero/status/portal).
 - **Acts** (3) × **Difficulties** (2: normal/nightmare) × **Stages** (10) = **60** этапов.
 - **HeroClasses** (пустой по умолчанию — классы открываются динамически и добавляются через `Reload`).
-- **FieldSourceBindings** (14): gold→hero-tab, xp/xpToLevel/heroLevel/heroDamage/heroClass→status-tab, stageId→portal-tab, остальные→MainZone.
+- **FieldSourceBindings** (24): gold→hero-tab, xp/xpToLevel/xpPair/heroLevel/heroDamage/heroClass→status-tab, stageId→portal-tab, остальные→MainZone (вкл. базовые `chest:brown/blue/red` и 9 калиброванных `chest:<тип>@1..@3`, генерируемых программно — см. §4).
 
 `FieldSourceBinding` (record: FieldKey, Source, TabId?) связывает поле с источником (FR-002b) — используется `IFieldExtractor` для фильтрации по активной вкладке.
 `IGameMechanics` / `GameMechanics` — контракт и реализация доступа к конфигу (FR-021): `Current` + `Reload(cfg)` с guard на null.

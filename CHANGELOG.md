@@ -5,12 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased]
 
 ## [0.1.6] - 2026-05-31
 
 ### Fixed
 - **App**: починить запуск виджета, детекцию игры и захват; доделать калибровку ROI (3e003e4)
+  - **App/XAML**: заменены отсутствующие в WinUI 3 кисти (`SystemControl*Brush`, `SystemFillColor*ForegroundBrush`) на актуальные Fluent-ресурсы в `WidgetWindow`/`CompareView`/`ChartsView`/`CalibrationView` — устранён `XamlParseException` → `0xC000027B` при старте.
+  - **Capture/WindowTracking**: исправлен порядок static-инициализации `GameWindowTrackerOptions` (`DefaultTitleHints` объявлен до `Default`) — устранён `NullReferenceException` в `FindGameWindow` («Игра не найдена» при запущенной игре); убрана слишком широкая подсказка `"TBH"` (ложно совпадала с окном `TBHStats`/VS Code → захват не того окна).
+  - **Capture/Wgc**: WinRT/CsWinRT-интероп приведён к идиомам .NET 8 — `RoGetActivationFactory` через кастомный `HStringMarshaler` (`UnmanagedType.HString` удалён в .NET 5+); `CreateForWindow` → `GraphicsCaptureItem.FromAbi`; `IDirect3DDevice` → `WinRT.MarshalInterface<IDirect3DDevice>.FromAbi` (устранены `MarshalDirectiveException` и «Failed to create a CCW for __ComObject»).
+  - **App/Калибровка**: `CalibrationViewModel` получает общий `ICaptureSession`; команда `CaptureFrame` снимает кадр игры (`SoftwareBitmap`→`SoftwareBitmapSource`, BGRA8 Premultiplied). Превью в `ScrollViewer` с зумом (Ctrl+колесо, кнопки −/Вписать/+) и панорамированием; рисование рамки ROI мышью по кадру (координаты = доли от размера контента); убрана разработческая заглушка «T051».
+  - **App/Калибровка**: устранён реентрантный крах при повторной разметке зоны — пакетное присваивание `X/Y/W/H` с подавлением промежуточных перерисовок и отложенным `RedrawRoiOverlay` через `DispatcherQueue` (вне pointer-события).
+  - **App**: добавлен глобальный `Application.UnhandledException` — логирование исключения + `e.Handled`, единичный UI-сбой не завершает весь виджет.
+  - **Tests**: регрессионные тесты `GameWindowTrackerOptionsTests` (подсказки не null; без ложных совпадений с `TBHStats`). Сборка решения — 0 ошибок / 0 предупреждений; Capture 96/96.
 
 ## [0.1.5] - 2026-05-31
 

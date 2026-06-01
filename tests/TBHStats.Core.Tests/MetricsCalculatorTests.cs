@@ -257,30 +257,34 @@ public sealed class MetricsCalculatorTests
     }
 
     /// <summary>
-    /// Два интервала с level-up в каждом:
-    /// Интервал 1: a.Xp=9000, a.XpToLevel=10000, b.Xp=3600, b.Level=a.Level+1 → дельта=4600
-    /// Интервал 2: b.Xp=3600, b.XpToLevel=12000, c.Xp=1200, c.Level=b.Level+1 → дельта=10800
-    /// Суммарно: (4600+10800)/(3600+3600)*3600 = 15400/7200*3600 = 7700 Xp/час.
+    /// Два интервала с level-up в каждом, оба near-full (a.Xp ≥ 0.8·xpToLevel):
+    /// Интервал 1: a.Xp=9000, a.XpToLevel=10000 (0.9) → nearFull ✓ → дельта=(10000-9000)+9800=10800
+    /// Интервал 2: a.Xp=9800, a.XpToLevel=12000 (0.817) → nearFull ✓ → дельта=(12000-9800)+1200=3400
+    /// Суммарно: (10800+3400)/7200*3600 = 14200/7200*3600 ≈ 7100 Xp/час.
     /// </summary>
     [Fact]
     public void ComputeLiveRates_TwoConsecutiveLevelUps_AccumulatesXpCorrectly()
     {
         // Arrange
+        // Интервал 1: a.Xp=9000/10000 (0.90 ≥ 0.8) → level-up компенсация применяется
+        //   дельта = (10000−9000) + 9800 = 10800
+        // Интервал 2: a.Xp=9800/12000 (0.817 ≥ 0.8) → level-up компенсация применяется
+        //   дельта = (12000−9800) + 1200 = 3400
+        // Темп = (10800+3400)/7200*3600 = 14200/7200*3600 ≈ 7100 Xp/час
         var samples = new[]
         {
             MakeSample(BaseUtc,                   xp: 9_000, xpToLevel: 10_000, level: 5),
-            MakeSample(BaseUtc.AddSeconds(3600),  xp: 3_600, xpToLevel: 12_000, level: 6),
+            MakeSample(BaseUtc.AddSeconds(3600),  xp: 9_800, xpToLevel: 12_000, level: 6),
             MakeSample(BaseUtc.AddSeconds(7200),  xp: 1_200, xpToLevel: 15_000, level: 7)
         };
-        // Дельта 1 = (10000-9000)+3600 = 4600
-        // Дельта 2 = (12000-3600)+1200 = 9600
-        // Темп = (4600+9600)/7200*3600 = 14200/7200*3600 ≈ 7100 Xp/час
 
         // Act
         LiveRates result = _sut.ComputeLiveRates(samples);
 
         // Assert
-        double expectedDelta = (10_000 - 9_000 + 3_600) + (12_000 - 3_600 + 1_200);
+        // Интервал 1: nearFull(9000 ≥ 8000) → (10000−9000)+9800 = 10800
+        // Интервал 2: nearFull(9800 ≥ 9600) → (12000−9800)+1200 = 3400
+        double expectedDelta = (10_000 - 9_000 + 9_800) + (12_000 - 9_800 + 1_200);
         double expectedRate  = expectedDelta / 7200.0 * 3600.0;
         result.XpPerHour.Should().BeApproximately(expectedRate, 1e-6);
     }
@@ -444,9 +448,11 @@ public sealed class MetricsCalculatorTests
 
     /// <summary>
     /// Два интервала. Первый: gold+3600, xp без level-up +3600, chest type1 +2.
-    /// Второй: gold+3600, level-up (xpToLevel−xp+newXp=4000), chest type1 +2.
+    /// Второй: gold+3600, level-up near-full (b.Xp=9000/10000=0.9 ≥ 0.8), chest type1 +2.
+    /// Дельта xp интервал 1 = 3600−0 = 3600
+    /// Дельта xp интервал 2 = (10000−9000)+500 = 1500 (near-full → компенсация применяется)
     /// Темп gold = (3600+3600)/7200*3600 = 3600/час.
-    /// Темп xp = (3600+4000)/7200*3600 = 3800/час.
+    /// Темп xp = (3600+1500)/7200*3600 = 2550/час.
     /// Темп chest[1] = (2+2)/7200*3600 = 2/час.
     /// </summary>
     [Fact]
@@ -457,10 +463,11 @@ public sealed class MetricsCalculatorTests
         var t1 = BaseUtc.AddSeconds(3600);
         var t2 = BaseUtc.AddSeconds(7200);
 
-        // Интервал 1: без level-up
-        // Интервал 2: level-up: b.XpToLevel=10000, b.Xp=6400; c.Level=b.Level+1, c.Xp=400
-        // Дельта xp интервал 1 = 3600−0 = 3600
-        // Дельта xp интервал 2 = (10000−6400)+400 = 4000
+        // Интервал 1: b.Xp=3600, b.XpToLevel=10000, b.Level=5 → нет level-up
+        //   дельта xp = 3600−0 = 3600
+        // Интервал 2: b.Xp=9000, b.XpToLevel=10000, c.Level=6 → level-up
+        //   nearFull: 9000 ≥ 10000*0.8=8000 ✓ → компенсация применяется
+        //   дельта xp = (10000−9000)+500 = 1500
         var samples = new[]
         {
             new MetricSample
@@ -472,13 +479,13 @@ public sealed class MetricsCalculatorTests
             new MetricSample
             {
                 TakenAtUtc = t1, IsReliable = true,
-                Gold = 3_600, Xp = 3_600, XpToLevel = 10_000, HeroLevel = 5,
+                Gold = 3_600, Xp = 9_000, XpToLevel = 10_000, HeroLevel = 5,
                 Chests = new List<MetricSampleChest> { new() { ChestTypeId = 1, Count = 2 } }
             },
             new MetricSample
             {
                 TakenAtUtc = t2, IsReliable = true,
-                Gold = 7_200, Xp = 400, XpToLevel = 15_000, HeroLevel = 6,
+                Gold = 7_200, Xp = 500, XpToLevel = 15_000, HeroLevel = 6,
                 Chests = new List<MetricSampleChest> { new() { ChestTypeId = 1, Count = 4 } }
             }
         };
@@ -490,14 +497,108 @@ public sealed class MetricsCalculatorTests
         result.GoldPerHour.Should().BeApproximately(3600.0, 1e-6,
             because: "суммарно +7200 золота за 7200 секунд = 3600/час");
 
-        double expectedXpDelta = 3_600 + ((10_000 - 3_600) + 400);
+        // Интервал 1: 9000−0 = 9000 (нет level-up)
+        // Интервал 2: nearFull(9000 ≥ 8000) → (10000−9000)+500 = 1500
+        double expectedXpDelta = 9_000 + ((10_000 - 9_000) + 500);
         double expectedXpRate  = expectedXpDelta / 7200.0 * 3600.0;
         result.XpPerHour.Should().BeApproximately(expectedXpRate, 1e-6,
-            because: "второй интервал — level-up, компенсируется через XpToLevel");
+            because: "второй интервал — near-full level-up, компенсируется через XpToLevel");
 
         result.ChestPerHourByType.Should().ContainKey(1);
         result.ChestPerHourByType[1].Should().BeApproximately(2.0, 1e-6,
             because: "+2 сундука за каждый интервал, суммарно +4 за 7200 с = 2/час");
+    }
+
+    // =========================================================================
+    // Защита от OCR-выбросов: misread heroLevel при низком xp (near-full guard)
+    // =========================================================================
+
+    /// <summary>
+    /// «Инкремент уровня» при низком a.Xp — misread heroLevel, а не реальный level-up.
+    /// a.Xp=100/10000=0.01 (< 0.8) → nearFull ✗ → компенсация НЕ применяется.
+    /// Дельта = b.Xp−a.Xp = 200−100 = 100 → темп = 100/3600*3600 = 100 Xp/час (НЕ ~10000).
+    /// </summary>
+    [Fact]
+    public void ComputeLiveRates_LevelIncrementAtLowXp_NoCompensationApplied()
+    {
+        // Arrange
+        // a.Xp=100, a.XpToLevel=10000 → ratio 0.01, значительно ниже 0.8 → nearFull=false
+        // b.Level = a.Level+1 (misread heroLevel), b.Xp=200
+        // Без компенсации: дельта = 200−100 = 100 → 100 Xp/час
+        // С (неправильной) компенсацией было бы: (10000−100)+200 = 10100 → ~10100 Xp/час (выброс)
+        var samples = new[]
+        {
+            MakeSample(BaseUtc,                  xp: 100,   xpToLevel: 10_000, level: 5),
+            MakeSample(BaseUtc.AddSeconds(3600), xp: 200,   xpToLevel: 10_000, level: 6)
+        };
+
+        // Act
+        LiveRates result = _sut.ComputeLiveRates(samples);
+
+        // Assert
+        // Компенсация не применяется → обычная дельта 200−100=100 за 3600 с = 100 Xp/час
+        result.XpPerHour.Should().BeApproximately(100.0, 1e-6,
+            because: "level+1 при a.Xp=100 (1% XpToLevel) — misread, компенсация level-up не применяется");
+        // Проверяем явно, что НЕТ выброса ~10000 Xp/час
+        result.XpPerHour.Should().BeLessThan(1000.0,
+            because: "компенсация при низком xp инжектировала бы ~xpToLevel в числитель (выброс)");
+    }
+
+    /// <summary>
+    /// Невозможное чтение: a.Xp > a.XpToLevel — OCR-мусор.
+    /// Интервал с невозможным чтением полностью пропускается (не участвует ни в числителе, ни в знаменателе).
+    /// Три сэмпла: интервал 1 валиден (+3600 xp за 3600 с), интервал 2 содержит невозможное чтение.
+    /// Темп = только по валидному интервалу: 3600/3600*3600 = 3600 Xp/час.
+    /// </summary>
+    [Fact]
+    public void ComputeLiveRates_ImpossibleXpReading_IntervalSkippedEntirely()
+    {
+        // Arrange
+        // Интервал 1: a.Xp=0/10000 (валидно), b.Xp=3600/10000 (валидно) → дельта=3600
+        // Интервал 2: b.Xp=3600/10000 (валидно), c.Xp=12000/10000 → c.Xp > c.XpToLevel (невозможно)
+        //   → интервал пропускается полностью (xpElapsedSum не увеличивается)
+        // Темп = 3600/3600*3600 = 3600 Xp/час (только первый интервал)
+        var samples = new[]
+        {
+            MakeSample(BaseUtc,                   xp: 0,      xpToLevel: 10_000, level: 3),
+            MakeSample(BaseUtc.AddSeconds(3600),  xp: 3_600,  xpToLevel: 10_000, level: 3),
+            MakeSample(BaseUtc.AddSeconds(7200),  xp: 12_000, xpToLevel: 10_000, level: 3)
+            //                                    ^^^ 12000 > 10000 → невозможное чтение, OCR-мусор
+        };
+
+        // Act
+        LiveRates result = _sut.ComputeLiveRates(samples);
+
+        // Assert
+        // Только первый интервал валиден: 3600/3600*3600 = 3600 Xp/час
+        result.XpPerHour.Should().BeApproximately(3600.0, 1e-6,
+            because: "второй интервал (xp > xpToLevel) пропускается; темп считается только по первому");
+    }
+
+    /// <summary>
+    /// Near-full level-up компенсируется корректно:
+    /// a.Xp=9000, a.XpToLevel=10000 (0.9 ≥ 0.8) → nearFull ✓.
+    /// b.Xp=500, b.Level=a.Level+1 → дельта = (10000−9000)+500 = 1500 за 3600 с = 1500 Xp/час.
+    /// </summary>
+    [Fact]
+    public void ComputeLiveRates_NearFullLevelUp_CompensationApplied()
+    {
+        // Arrange
+        // a.Xp=9000/10000=0.9 ≥ 0.8 → nearFull=true; levelUpByOne=true → компенсация применяется
+        // дельта = (10000−9000)+500 = 1500 за 3600 с = 1500 Xp/час
+        var samples = new[]
+        {
+            MakeSample(BaseUtc,                  xp: 9_000, xpToLevel: 10_000, level: 5),
+            MakeSample(BaseUtc.AddSeconds(3600), xp: 500,   xpToLevel: 12_000, level: 6)
+        };
+
+        // Act
+        LiveRates result = _sut.ComputeLiveRates(samples);
+
+        // Assert
+        // (10000−9000)+500 = 1500 за 3600 с = 1500 Xp/час
+        result.XpPerHour.Should().BeApproximately(1500.0, 1e-6,
+            because: "a.Xp=9000 — 90% от XpToLevel, nearFull=true, level-up компенсация корректна");
     }
 
     // =========================================================================

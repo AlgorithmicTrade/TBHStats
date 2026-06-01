@@ -70,6 +70,24 @@ public sealed partial class LiveStatsViewModel : ObservableObject
     private string _heroDamageText = "—";
 
     // ──────────────────────────────────────────────────────────────
+    // Текущие значения (OCR-контроль в реальном времени)
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>Текущий опыт/до уровня для отображения («1 234 567 / 2 000 000» или «—»).</summary>
+    [ObservableProperty]
+    private string _xpCurrentText = "—";
+
+    /// <summary>Текущие счётчики сундуков для отображения («Базовый: 3, Редкий: 1» или «—»).</summary>
+    [ObservableProperty]
+    private string _chestsCurrentText = "—";
+
+    /// <summary>
+    /// Оценка времени до следующего уровня («1ч 12м 03с» или «—») при текущем темпе опыт/ч.
+    /// </summary>
+    [ObservableProperty]
+    private string _timeToLevelText = "—";
+
+    // ──────────────────────────────────────────────────────────────
     // Золото и этап
     // ──────────────────────────────────────────────────────────────
 
@@ -183,10 +201,18 @@ public sealed partial class LiveStatsViewModel : ObservableObject
         HeroClassText  = s.HeroClass  is { Length: > 0 } cls ? cls               : "—";
         HeroDamageText = s.HeroDamage is long dmg ? FormatLong(dmg)               : "—";
 
+        // Текущие значения (OCR-контроль)
+        XpCurrentText     = s.Xp is long xp
+            ? $"{FormatLong(xp)} / {(s.XpToLevel is long t ? FormatLong(t) : "—")}"
+            : "—";
+        ChestsCurrentText = BuildChestsCountText(s.Chests);
+        TimeToLevelText   = BuildTimeToLevelText(s.Xp, s.XpToLevel, s.Rates.XpPerHour);
+
         // Золото и этап
         Gold      = s.Gold;
         GoldText  = s.Gold  is long g ? FormatLong(g) : "—";
-        StageText = s.Stage is StageRef sr ? sr.ToString() : "—";
+        // «Этап» показываем как «акт-этап» (напр. «3-1»); сложность в MainZone не отображается.
+        StageText = s.Stage is StageRef sr ? $"{sr.ActNumber}-{sr.StageNumber}" : "—";
 
         // Состояния (T031)
         IsGameFound = s.State != CaptureState.NotFound;
@@ -227,6 +253,41 @@ public sealed partial class LiveStatsViewModel : ObservableObject
     private static string FormatLong(long value) => value.ToString("N0");
 
     /// <summary>
+    /// Оценивает время до следующего уровня: (xpToLevel − xp) / (опыт/ч) → ч/м/с.
+    /// Возвращает «—», если данных нет, темп ≤ 0, или цель уже достигнута.
+    /// </summary>
+    private static string BuildTimeToLevelText(long? xp, long? xpToLevel, double xpPerHour)
+    {
+        if (xp is not long current || xpToLevel is not long target)
+            return "—";
+        if (xpPerHour <= 0)
+            return "—";
+
+        long remaining = target - current;
+        if (remaining <= 0)
+            return "—";
+
+        double seconds = remaining / xpPerHour * 3600.0;
+        if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0)
+            return "—";
+
+        // Очень медленный темп → не показываем гигантские/переполняющиеся значения.
+        if (seconds > 359_999.0) // > 99ч 59м 59с
+            return "> 99ч";
+
+        long total = (long)Math.Round(seconds);
+        long h = total / 3600;
+        long m = (total % 3600) / 60;
+        long sec = total % 60;
+
+        if (h > 0)
+            return $"{h}ч {m:D2}м {sec:D2}с";
+        if (m > 0)
+            return $"{m}м {sec:D2}с";
+        return $"{sec}с";
+    }
+
+    /// <summary>
     /// Строит строку вида «Базовый: 12/ч, Редкий: 3/ч» из словаря ChestType.Id → сундуков/час.
     /// Использует <see cref="IGameMechanics"/> для получения <see cref="ChestType.DisplayName"/>
     /// вместо числового Id — тип сундука различается текстом, не только цветом (A11y §XI).
@@ -246,5 +307,29 @@ public sealed partial class LiveStatsViewModel : ObservableObject
                 string label = chestType is not null ? chestType.DisplayName : kv.Key.ToString();
                 return $"{label}: {kv.Value:N1}/ч";
             }));
+    }
+
+    /// <summary>
+    /// Строит строку вида «Базовый: 3, Редкий: 1» из словаря ChestType.Id → текущее количество.
+    /// Использует <see cref="IGameMechanics"/> для получения <see cref="ChestType.DisplayName"/>.
+    /// Пропускает типы с Count == 0. Возвращает «—» если словарь пуст или все счётчики нулевые.
+    /// </summary>
+    private string BuildChestsCountText(IReadOnlyDictionary<int, int> byType)
+    {
+        if (byType.Count == 0) return "—";
+
+        GameMechanicsConfig cfg = _gameMechanics.Current;
+
+        string result = string.Join(", ", byType
+            .Where(kv => kv.Value > 0)
+            .OrderBy(kv => kv.Key)
+            .Select(kv =>
+            {
+                ChestType? chestType = cfg.ChestTypes.FirstOrDefault(ct => ct.Id == kv.Key);
+                string label = chestType is not null ? chestType.DisplayName : kv.Key.ToString();
+                return $"{label}: {kv.Value}";
+            }));
+
+        return result.Length > 0 ? result : "—";
     }
 }

@@ -216,10 +216,11 @@ public sealed partial class WidgetWindow : Window
             AppWindow.Move(new PointInt32((int)ws.PosX, (int)ws.PosY));
         }
 
-        // AlwaysOnTop через OverlappedPresenter.
+        // Режим «поверх всех окон» отключён по требованию: виджет не закрепляется поверх.
+        // Сохранённое значение ws.AlwaysOnTop игнорируется (всегда false).
         if (AppWindow.Presenter is OverlappedPresenter presenter)
         {
-            presenter.IsAlwaysOnTop = ws.AlwaysOnTop;
+            presenter.IsAlwaysOnTop = false;
         }
     }
 }

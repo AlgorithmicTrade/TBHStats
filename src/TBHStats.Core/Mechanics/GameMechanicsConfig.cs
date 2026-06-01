@@ -103,7 +103,7 @@ public sealed class GameMechanicsConfig
         HeroClass[] heroClasses = [];
 
         // ── FieldSourceBindings ───────────────────────────────────────────────
-        FieldSourceBinding[] bindings =
+        FieldSourceBinding[] baseBindings =
         [
             // Hero tab (Id=1)
             new FieldSourceBinding("gold",          FieldSource.Tab,      TabId: 1),
@@ -111,6 +111,7 @@ public sealed class GameMechanicsConfig
             // Status tab (Id=3)
             new FieldSourceBinding("xp",            FieldSource.Tab,      TabId: 3),
             new FieldSourceBinding("xpToLevel",     FieldSource.Tab,      TabId: 3),
+            new FieldSourceBinding("xpPair",        FieldSource.Tab,      TabId: 3),
             new FieldSourceBinding("heroLevel",     FieldSource.Tab,      TabId: 3),
             new FieldSourceBinding("heroDamage",    FieldSource.Tab,      TabId: 3),
             new FieldSourceBinding("heroClass",     FieldSource.Tab,      TabId: 3),
@@ -121,12 +122,30 @@ public sealed class GameMechanicsConfig
             // MainZone (всегда видно)
             new FieldSourceBinding("stageProgress", FieldSource.MainZone, TabId: null),
             new FieldSourceBinding("stageTime",     FieldSource.MainZone, TabId: null),
+
+            // Базовые ключи сундуков (итоговый семантический ключ; обратная совместимость).
             new FieldSourceBinding("chest:brown",   FieldSource.MainZone, TabId: null),
             new FieldSourceBinding("chest:blue",    FieldSource.MainZone, TabId: null),
             new FieldSourceBinding("chest:red",     FieldSource.MainZone, TabId: null),
+
             new FieldSourceBinding("nextLocation",  FieldSource.MainZone, TabId: null),
             new FieldSourceBinding("activeTab",     FieldSource.MainZone, TabId: null),
         ];
+
+        // Калиброванные @N-ключи для каждого активного типа сундука × N ∈ {1,2,3}.
+        // Генерируется программно (config-driven, ADR-009): новый тип сундука
+        // добавляется только в chestTypes — @N-связки появятся автоматически.
+        const int maxSlotCount = 3;
+        List<FieldSourceBinding> slotBindings = new(chestTypes.Length * maxSlotCount);
+        foreach (ChestType ct in chestTypes)
+        {
+            if (!ct.IsActive)
+                continue;
+            for (int n = 1; n <= maxSlotCount; n++)
+                slotBindings.Add(new FieldSourceBinding($"chest:{ct.Key}@{n}", FieldSource.MainZone, TabId: null));
+        }
+
+        FieldSourceBinding[] bindings = [.. baseBindings, .. slotBindings];
 
         return new GameMechanicsConfig(
             chestTypes:          chestTypes,

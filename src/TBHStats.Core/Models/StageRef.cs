@@ -41,6 +41,27 @@ public readonly record struct StageRef(int ActNumber, string DifficultyKey, int 
     }
 
     /// <summary>
+    /// Возвращает ПРЕДЫДУЩИЙ этап (для вычисления текущего из nextLocation: current = nextLocation − 1)
+    /// с переносом «этап 1 данного акта → предыдущий акт, этап <paramref name="stagesPerAct"/>».
+    /// </summary>
+    /// <param name="stagesPerAct">Число этапов в акте (по умолчанию 10, ADR-008).</param>
+    /// <returns>
+    /// Предыдущий <see cref="StageRef"/>; либо <see langword="null"/>, если предыдущего нет
+    /// (этап 1 первого акта) или <paramref name="stagesPerAct"/> &lt; 1.
+    /// </returns>
+    public StageRef? Previous(int stagesPerAct = 10)
+    {
+        if (StageNumber > 1)
+            return new StageRef(ActNumber, DifficultyKey, StageNumber - 1);
+
+        // StageNumber == 1 → последний этап предыдущего акта (если акт есть).
+        if (ActNumber > 1 && stagesPerAct >= 1)
+            return new StageRef(ActNumber - 1, DifficultyKey, stagesPerAct);
+
+        return null; // 1-1: предыдущего этапа нет
+    }
+
+    /// <summary>
     /// Возвращает строковое представление в формате «Act{ActNumber}/{DifficultyKey}/{StageNumber}»,
     /// например «Act1/normal/5».
     /// </summary>

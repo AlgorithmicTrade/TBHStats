@@ -83,6 +83,10 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- Золото/час -->
@@ -154,8 +158,99 @@
                     ToolTipService.ToolTip="{Binding ChestsPerHourText}" />
             </Grid>
 
+            <!-- Текущее золото (OCR-контроль) -->
+            <Grid Grid.Row="3" AutomationProperties.Name="Текущее золото">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="Золото"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    VerticalAlignment="Center" />
+                <TextBlock
+                    x:Name="GoldCurrentValue"
+                    Grid.Column="1"
+                    AutomationProperties.Name="Текущее золото"
+                    AutomationProperties.LiveSetting="Polite"
+                    Text="{Binding GoldText}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    VerticalAlignment="Center" />
+            </Grid>
+
+            <!-- Текущий опыт (OCR-контроль) -->
+            <Grid Grid.Row="4" AutomationProperties.Name="Текущий опыт">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="Опыт"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    VerticalAlignment="Center" />
+                <TextBlock
+                    x:Name="XpCurrentValue"
+                    Grid.Column="1"
+                    AutomationProperties.Name="Текущий опыт"
+                    AutomationProperties.LiveSetting="Polite"
+                    Text="{Binding XpCurrentText}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    VerticalAlignment="Center" />
+            </Grid>
+
+            <!-- До уровня — оценка времени до следующего уровня при текущем опыт/ч -->
+            <Grid Grid.Row="5" AutomationProperties.Name="Время до следующего уровня">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="До уровня"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    VerticalAlignment="Center" />
+                <TextBlock
+                    x:Name="TimeToLevelValue"
+                    Grid.Column="1"
+                    AutomationProperties.Name="Оценка времени до следующего уровня"
+                    AutomationProperties.LiveSetting="Polite"
+                    Text="{Binding TimeToLevelText}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    FontWeight="SemiBold"
+                    VerticalAlignment="Center"
+                    ToolTipService.ToolTip="Оценка по текущему опыту, опыту до уровня и темпу опыт/ч" />
+            </Grid>
+
+            <!-- Текущие сундуки (OCR-контроль) -->
+            <Grid Grid.Row="6" AutomationProperties.Name="Текущие сундуки по типам">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="Сундуки"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    VerticalAlignment="Center" />
+                <TextBlock
+                    x:Name="ChestsCurrentValue"
+                    Grid.Column="1"
+                    AutomationProperties.Name="Текущие сундуки по типам"
+                    AutomationProperties.LiveSetting="Polite"
+                    Text="{Binding ChestsCurrentText}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    VerticalAlignment="Center"
+                    ToolTipService.ToolTip="{Binding ChestsCurrentText}" />
+            </Grid>
+
             <!-- Герой -->
-            <Grid Grid.Row="3">
+            <Grid Grid.Row="7">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -187,8 +282,8 @@
                 </StackPanel>
             </Grid>
 
-            <!-- Этап + золото -->
-            <Grid Grid.Row="4">
+            <!-- Этап -->
+            <Grid Grid.Row="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -199,24 +294,16 @@
                     Style="{StaticResource CaptionTextBlockStyle}"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     VerticalAlignment="Center" />
-                <StackPanel
+                <TextBlock
                     Grid.Column="1"
-                    Orientation="Horizontal"
-                    Spacing="8">
-                    <TextBlock
-                        Text="{Binding StageText}"
-                        Style="{StaticResource BodyTextBlockStyle}"
-                        VerticalAlignment="Center" />
-                    <TextBlock
-                        Text="{Binding GoldText}"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        VerticalAlignment="Center" />
-                </StackPanel>
+                    Text="{Binding StageText}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    VerticalAlignment="Center"
+                    ToolTipService.ToolTip="Следующая локация (текущий этап + 1)" />
             </Grid>
 
             <!-- Статус + время обновления (устаревание) -->
-            <Grid Grid.Row="5" Margin="0,4,0,0">
+            <Grid Grid.Row="9" Margin="0,4,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -233,7 +320,8 @@
                     Style="{StaticResource CaptionTextBlockStyle}"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Opacity="{Binding IsStale, Converter={StaticResource BoolToVisibilityConverter}}"
-                    VerticalAlignment="Center" />
+                    VerticalAlignment="Center"
+                    ToolTipService.ToolTip="Время последнего успешного распознавания" />
             </Grid>
         </Grid>
 

@@ -86,8 +86,18 @@ public sealed class OcrReader : IOcrReader
         if (cropped is null)
             return NotRecognized;
 
+        // Паддинг: добавляем однотонный бордюр вокруг очень тесных кропов перед апскейлом.
+        // Применяется только при min(w,h) < PaddingThreshold — агрессивный апскейл (×3 и выше)
+        // сглаживает тонкие глифы (запятая, точка) у края кропа при Fant-интерполяции.
+        // При больших кропах (h ≥ 40px) паддинг не нужен: апскейл умеренный (×1–×2).
+        int minCropDim = Math.Min(cropped.PixelWidth, cropped.PixelHeight);
+        using SoftwareBitmap? paddedForScale = minCropDim < PaddingThreshold
+            ? AddPadding(cropped, OcrPaddingPixels)
+            : null;
+        SoftwareBitmap scaleSrc = paddedForScale ?? cropped;
+
         // Апскейл маленьких кропов (Windows.Media.Ocr не читает слишком мелкие изображения).
-        SoftwareBitmap ocrInput = await UpscaleForOcrAsync(cropped, WinOcrEngine.MaxImageDimension, ct).ConfigureAwait(false);
+        SoftwareBitmap ocrInput = await UpscaleForOcrAsync(scaleSrc, WinOcrEngine.MaxImageDimension, ct).ConfigureAwait(false);
 
         // Конвертировать в формат, требуемый WinOcrEngine (Bgra8 Premultiplied)
         SoftwareBitmap bitmapForOcr = EnsureOcrFormat(ocrInput);
@@ -282,6 +292,64 @@ public sealed class OcrReader : IOcrReader
         }
 
         return Math.Clamp(coveredArea / imageArea, 0.0, 1.0);
+    }
+
+    // ── паддинг перед апскейлом ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Количество пикселей однотонного паддинга, добавляемого вокруг очень тесных кропов
+    /// (min(w,h) &lt; <see cref="PaddingThreshold"/>) перед апскейлом.
+    /// </summary>
+    /// <remarks>
+    /// Паддинг предотвращает слияние символов у края (запятая, точка, «9» после запятой)
+    /// с границей изображения при Fant-сглаживании во время агрессивного апскейла (×3–×5).
+    /// Цвет паддинга — тёмный непрозрачный (соответствует фону игрового UI Task Bar Hero).
+    /// </remarks>
+    private const int OcrPaddingPixels = 6;
+
+    /// <summary>
+    /// Порог min(w,h) кропа, ниже которого применяется паддинг.
+    /// При min(w,h) ≥ этого значения апскейл ≤ ×2 — паддинг не нужен.
+    /// При min(w,h) &lt; этого значения апскейл ≥ ×3 — паддинг защищает граничные глифы.
+    /// </summary>
+    private const int PaddingThreshold = 40;
+
+    /// <summary>
+    /// Создаёт новый <see cref="SoftwareBitmap"/> с однотонным бордюром
+    /// шириной <paramref name="pad"/> пикселей вокруг <paramref name="src"/>.
+    /// Формат результата — Bgra8 Premultiplied (тот же, что у входного кропа).
+    /// Цвет паддинга — полностью прозрачный тёмный (B=0 G=0 R=0 A=255 premult → 0x00 00 00 FF).
+    /// </summary>
+    private static SoftwareBitmap AddPadding(SoftwareBitmap src, int pad)
+    {
+        int sw = src.PixelWidth;
+        int sh = src.PixelHeight;
+        int dw = sw + pad * 2;
+        int dh = sh + pad * 2;
+
+        const int bpp = 4; // Bgra8
+        int srcStride = sw * bpp;
+        int dstStride = dw * bpp;
+
+        byte[] srcPixels = new byte[srcStride * sh];
+        src.CopyToBuffer(srcPixels.AsBuffer());
+
+        // Заполняем тёмным непрозрачным цветом (B=0, G=0, R=0, A=255 → pre-mult = 0,0,0,255)
+        byte[] dstPixels = new byte[dstStride * dh];
+        for (int i = 3; i < dstPixels.Length; i += bpp)
+            dstPixels[i] = 0xFF; // alpha = 255
+
+        // Копируем исходный кроп в центр
+        for (int row = 0; row < sh; row++)
+        {
+            int srcOff = row * srcStride;
+            int dstOff = (row + pad) * dstStride + pad * bpp;
+            System.Buffer.BlockCopy(srcPixels, srcOff, dstPixels, dstOff, srcStride);
+        }
+
+        SoftwareBitmap result = new(BitmapPixelFormat.Bgra8, dw, dh, BitmapAlphaMode.Premultiplied);
+        result.CopyFromBuffer(dstPixels.AsBuffer());
+        return result;
     }
 
     // ── апскейл маленьких кропов ──────────────────────────────────────────────

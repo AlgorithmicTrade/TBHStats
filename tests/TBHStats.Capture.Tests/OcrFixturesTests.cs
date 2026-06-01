@@ -594,6 +594,64 @@ public sealed class OcrFixturesTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // overall_priest.jpg (1009×957) — Priest, STATUS: Basic Attack DPS 126,9
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Широкая полоса ROI на overall_priest.jpg: OCR читает «126,9» корректно.
+    /// Служит baseline — подтверждает наличие значения на фикстуре.
+    /// </summary>
+    [Fact]
+    public async Task OverallPriest_WideRoi_OcrReadsBasicAttackDpsCorrectly()
+    {
+        var (bitmap, w, h) = await LoadJpgAsync("overall_priest.jpg");
+        using CapturedFrame frame = MakeFrame(bitmap, w, h);
+        // Широкая полоса, аналогичная тому, что воспроизводит корректное чтение
+        RoiCalibration roi = Roi("basicAttackDps_wide", 0.0, 0.20, 1.0, 0.10);
+
+        OcrResult result = await ReadAndLogAsync(frame, roi);
+
+        result.Recognized.Should().BeTrue("широкая полоса OCR должна прочитать строку STATUS-панели");
+        // Широкая полоса содержит «126,9» корректно — это подтверждённый baseline
+        result.RawText.Should().Contain("126,9",
+            "широкая полоса должна содержать «126,9» (baseline — читается корректно)");
+    }
+
+    /// <summary>
+    /// Тесный ROI вокруг значения «126,9» (Basic Attack DPS, Priest, STATUS).
+    /// Воспроизводит misread: апскейл мелкого кропа (h~29px, min &lt; MinOcrDimension=96 → ×4)
+    /// без паддинга при Fant-интерполяции сглаживает тонкий глиф запятой.
+    /// Baseline (без паддинга): RawText='126;9' (запятая → «;»).
+    /// Фикс (OcrReader.AddPadding 6px): RawText='126,9' — GREEN.
+    /// ROI: x=0.28, y=0.238, w=0.13, h=0.030 (≈131×29px); подобраны по overall_priest.jpg (1009×957).
+    /// </summary>
+    [Fact]
+    public async Task OverallPriest_NarrowRoi_BasicAttackDps_ReadsCommaCorrectlyWithPadding()
+    {
+        var (bitmap, w, h) = await LoadJpgAsync("overall_priest.jpg");
+        using CapturedFrame frame = MakeFrame(bitmap, w, h);
+        // Тесный ROI: только значение «126,9» без лейбла.
+        // 1009×957: w=0.13→~131px, h=0.030→~29px — min=29 < MinOcrDimension=96 → апскейл ×4.
+        // Без паддинга: RawText='126;9' (misread).
+        // С паддингом 6px: RawText='126,9' (корректно).
+        RoiCalibration roi = Roi("basicAttackDps_narrow", 0.28, 0.238, 0.13, 0.030);
+
+        OcrResult result = await ReadAndLogAsync(frame, roi);
+
+        string normalized = NormalizeWs(result.RawText);
+        _output.WriteLine($"Normalized RawText: '{normalized}'");
+
+        result.Recognized.Should().BeTrue("тесный ROI должен распознать текст");
+        normalized.Should().Contain("126,9",
+            "тесный ROI должен читать «126,9» с запятой (паддинг сохраняет глиф запятой при апскейле ×4)");
+
+        // Парсинг: TryParseAbbreviatedNumber(«126,9») → 126
+        bool parsed = _parser.TryParseAbbreviatedNumber(result.RawText, out long dpsValue);
+        parsed.Should().BeTrue("ValueParser должен парсить «126,9»");
+        dpsValue.Should().Be(126L, "floor(126.9) = 126");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Мета-тест: smoke — движок OCR доступен
     // ─────────────────────────────────────────────────────────────────────────
 

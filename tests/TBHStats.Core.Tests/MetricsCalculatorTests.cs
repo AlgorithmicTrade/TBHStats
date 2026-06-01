@@ -602,6 +602,167 @@ public sealed class MetricsCalculatorTests
     }
 
     // =========================================================================
+    // Guard: крупная дельта XP в не-level-up-ветке → исключение пары целиком
+    // =========================================================================
+
+    /// <summary>
+    /// Смена героя на границе сэмплов порождает бессмысленную огромную дельту:
+    /// b.Xp(новый герой) − a.Xp(старый герой) = 7 995 000 > a.XpToLevel 10 000.
+    /// В не-level-up-ветке положительная дельта > a.XpToLevel — физически невозможна
+    /// в пределах одного уровня и трактуется как разрыв: пара исключается ЦЕЛИКОМ
+    /// (ни в числитель, ни в знаменатель xpElapsedSum).
+    /// Засчитываются только: интервал A (5000 xp) и интервал B (7000 xp).
+    /// xpDeltaSum=12_000, xpElapsedSum=7200 → XpPerHour ≈ 6000.0.
+    /// </summary>
+    [Fact]
+    public void ComputeLiveRates_HeroSwitch_SpuriousCrossHeroDeltaExcluded()
+    {
+        // Arrange
+        // t0 → t+3600: герой A, xp 0 → 5000 (дельта 5000, валидная)
+        // t+3600 → t+7200: СМЕНА ГЕРОЯ; a.Xp=5000/10000, b.Xp=8_000_000/10_000_000
+        //   levelUpByOne = false (50 ≠ 10+1) → не-level-up-ветка
+        //   дельта = 7_995_000 > a.XpToLevel 10_000 → РАЗРЫВ, пара исключается целиком
+        // t+7200 → t+10800: герой B, xp 8_000_000 → 8_007_000 (дельта 7000, валидная)
+        var samples = new[]
+        {
+            MakeSample(BaseUtc,                   xp: 0,           xpToLevel: 10_000,     level: 10),
+            MakeSample(BaseUtc.AddSeconds(3600),  xp: 5_000,       xpToLevel: 10_000,     level: 10),
+            MakeSample(BaseUtc.AddSeconds(7200),  xp: 8_000_000,   xpToLevel: 10_000_000, level: 50),
+            MakeSample(BaseUtc.AddSeconds(10800), xp: 8_007_000,   xpToLevel: 10_000_000, level: 50)
+        };
+
+        // Act
+        LiveRates result = _sut.ComputeLiveRates(samples);
+
+        // Assert
+        // xpDeltaSum=5000+7000=12000, xpElapsedSum=3600+3600=7200 → 12000/7200*3600 = 6000.0
+        result.XpPerHour.Should().BeApproximately(6000.0, 1e-6,
+            because: "граничная межгеройская пара (дельта 7_995_000 > a.XpToLevel 10_000) исключается целиком; засчитаны только интервал A (+5000) и интервал B (+7000)");
+
+        result.XpPerHour.Should().BeLessThan(1_000_000,
+            because: "без guard'а граничная межгеройская дельта (~7.995e6) навсегда раздула бы числитель и дала бы ~2.67e6 xp/час вместо ~6000");
+    }
+
+    /// <summary>
+    /// OCR-выброс или многоуровневый misread: уровень не изменился (не-level-up-ветка),
+    /// но дельта xp = 77_000 > a.XpToLevel 10_000 — физически невозможна в пределах уровня.
+    /// Пара исключается ЦЕЛИКОМ. Засчитывается только первый интервал (+2000 за 3600 с).
+    /// xpDeltaSum=2000, xpElapsedSum=3600 → XpPerHour ≈ 2000.0.
+    /// </summary>
+    [Fact]
+    public void ComputeLiveRates_WithinLevelGainExceedsXpToLevel_PairSkipped()
+    {
+        // Arrange
+        // Интервал 1: a.Xp=1000, b.Xp=3000, level=5→5 → дельта 2000 ≤ a.XpToLevel 10000 → валидно
+        // Интервал 2: a.Xp=3000/10000, b.Xp=80000/100000, level=5→5
+        //   b.Xp ≤ b.XpToLevel (80000 ≤ 100000) → старая плаузибельность проходит,
+        //   НО levelUpByOne=false → не-level-up-ветка
+        //   дельта = 77_000 > a.XpToLevel 10_000 → РАЗРЫВ, пара исключается целиком
+        var samples = new[]
+        {
+            MakeSample(BaseUtc,                   xp: 1_000,  xpToLevel: 10_000,  level: 5),
+            MakeSample(BaseUtc.AddSeconds(3600),  xp: 3_000,  xpToLevel: 10_000,  level: 5),
+            MakeSample(BaseUtc.AddSeconds(7200),  xp: 80_000, xpToLevel: 100_000, level: 5)
+        };
+
+        // Act
+        LiveRates result = _sut.ComputeLiveRates(samples);
+
+        // Assert
+        // Только первый интервал: 2000/3600*3600 = 2000.0 xp/час
+        result.XpPerHour.Should().BeApproximately(2000.0, 1e-6,
+            because: "второй интервал (дельта 77_000 > a.XpToLevel 10_000, уровень не вырос) — разрыв, пара исключается целиком; темп считается только по первому валидному интервалу");
+    }
+
+    /// <summary>
+    /// Регрессионный барьер: компенсированная level-up-ветка (nearFull + levelUpByOne)
+    /// не затрагивается новым guard'ом, даже если компенсированная дельта > a.XpToLevel.
+    /// a.Xp=9000/10000 (90% ≥ 80%) → nearFull ✓; b.Level=a.Level+1 → levelUpByOne ✓.
+    /// Компенсированная дельта = (10_000−9_000)+9_800 = 10_800 > a.XpToLevel 10_000,
+    /// но это ветка level-up — должна засчитываться.
+    /// XpPerHour = 10_800/3600*3600 = 10_800.0.
+    /// Этот тест ОБЯЗАН оставаться GREEN и до, и после добавления guard'а.
+    /// </summary>
+    [Fact]
+    public void ComputeLiveRates_CompensatedLevelUpDeltaAboveXpToLevel_StillCounted()
+    {
+        // Arrange
+        // a.Xp=9000, a.XpToLevel=10000 → nearFull ✓ (9000 ≥ 8000)
+        // b.Level = a.Level+1 = 6 → levelUpByOne ✓
+        // Компенсированная дельта = (10000−9000)+9800 = 10800 (> a.XpToLevel 10000, но это level-up ветка)
+        var samples = new[]
+        {
+            MakeSample(BaseUtc,                   xp: 9_000, xpToLevel: 10_000, level: 5),
+            MakeSample(BaseUtc.AddSeconds(3600),  xp: 9_800, xpToLevel: 12_000, level: 6)
+        };
+
+        // Act
+        LiveRates result = _sut.ComputeLiveRates(samples);
+
+        // Assert
+        // Компенсированная ветка: дельта = (10000−9000)+9800 = 10800 за 3600 с = 10800 xp/час
+        result.XpPerHour.Should().BeApproximately(10_800.0, 1e-6,
+            because: "guard применяется ТОЛЬКО к не-level-up-ветке; компенсированная level-up-дельта (nearFull + levelUpByOne) засчитывается всегда, даже если она превышает a.XpToLevel");
+    }
+
+    // =========================================================================
+    // TDD RED: структурный guard по уровню героя (late-game смена героя)
+    // =========================================================================
+
+    /// <summary>
+    /// Смена героя в late-game: межгеройская дельта XP МЕНЬШЕ a.XpToLevel,
+    /// поэтому существующий магнитудный guard НЕ срабатывает.
+    /// Однако Δуровня = +15 (≠ 0 и ≠ +1) — структурный признак разрыва.
+    ///
+    /// Сэмплы (интервалы 3600 с):
+    ///   t0:       xp=10_000_000, xpToLevel=200_000_000, level=80  (герой A)
+    ///   t+3600:   xp=11_000_000, xpToLevel=200_000_000, level=80  (герой A: +1_000_000 за 3600 с)
+    ///   t+7200:   xp=90_000_000, xpToLevel=300_000_000, level=95  (СМЕНА на героя B; Δlevel=+15)
+    ///   t+10800:  xp=91_000_000, xpToLevel=300_000_000, level=95  (герой B: +1_000_000 за 3600 с)
+    ///
+    /// Граничная пара A2→B1 (t+3600 → t+7200):
+    ///   xpDelta = 90M−11M = 79M < a.XpToLevel 200M → магнитудный guard НЕ ловит.
+    ///   Δlevel = 95−80 = 15 ≠ 0 и ≠ +1 → структурный разрыв → ДОЛЖНА исключиться.
+    ///
+    /// Ожидание ПОСЛЕ фикса: засчитаны только интервал A (+1M/3600с) и B (+1M/3600с).
+    ///   xpDeltaSum=2_000_000, xpElapsedSum=7200 → XpPerHour ≈ 1_000_000.0.
+    ///
+    /// TDD RED: до добавления структурного guard'а по уровню этот тест ПАДАЕТ —
+    /// граничная пара проходит и даёт XpPerHour ≈ 27_000_000 вместо 1_000_000.
+    /// </summary>
+    [Fact]
+    public void ComputeLiveRates_HeroSwitchInLateGame_LevelJumpExcluded()
+    {
+        // Arrange
+        // Герой A: два сэмпла с реальной дельтой 1_000_000 за 3600 с
+        // t+7200: смена на героя B; Δlevel = +15 → магнитудный guard не ловит (79M < 200M),
+        //         но структурный guard по уровню должен исключить эту пару целиком
+        // Герой B: один интервал с реальной дельтой 1_000_000 за 3600 с
+        var samples = new[]
+        {
+            MakeSample(BaseUtc,                   xp: 10_000_000, xpToLevel: 200_000_000, level: 80),
+            MakeSample(BaseUtc.AddSeconds(3600),  xp: 11_000_000, xpToLevel: 200_000_000, level: 80),
+            MakeSample(BaseUtc.AddSeconds(7200),  xp: 90_000_000, xpToLevel: 300_000_000, level: 95),
+            MakeSample(BaseUtc.AddSeconds(10800), xp: 91_000_000, xpToLevel: 300_000_000, level: 95)
+        };
+
+        // Act
+        LiveRates result = _sut.ComputeLiveRates(samples);
+
+        // Assert
+        // После фикса: xpDeltaSum=2_000_000, xpElapsedSum=7200 → 2_000_000/7200*3600 = 1_000_000
+        result.XpPerHour.Should().BeApproximately(1_000_000.0, 1.0,
+            because: "структурный guard по уровню должен исключить пару A2→B1 (Δlevel=+15); " +
+                     "засчитаны только интервал A (+1M) и B (+1M): 2M/7200*3600 = 1_000_000");
+
+        // Без структурного guard'а: межгеройская дельта 79M/3600с × 3600 ≈ 27_000_000 xp/ч
+        // Этот assert ПРОХОДИТ до фикса и ДОЛЖЕН проходить после:
+        result.XpPerHour.Should().BeLessThan(5_000_000.0,
+            because: "без структурного guard'а по уровню межгеройская дельта 79M даёт ≈27M xp/ч " +
+                     "(магнитудный guard не срабатывает, т.к. 79M < a.XpToLevel 200M)");
+    }
+
+    // =========================================================================
     // Вспомогательные фабричные методы
     // =========================================================================
 

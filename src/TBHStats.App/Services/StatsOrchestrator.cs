@@ -53,8 +53,8 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     /// а НЕ вероятностная достоверность. Для коротких числовых полей покрытие объективно низкое:
     /// на живой игре корректные чтения дают 0.08–0.48 (напр. heroLevel «27» → 0.08, gold → 0.23).
     /// Поэтому порог низкий — он лишь отсекает почти-пустой шум; основная валидация значений
-    /// выполняется парсером (число/время/этап обязаны корректно распарситься) и sanity-проверками
-    /// (монотонность золота и т.п.) в <c>IObservationValidator</c>.
+    /// выполняется парсером (число/время/этап обязаны корректно распарситься) и confidence-фильтром
+    /// в <c>IObservationValidator</c> (золото — расходуемый баланс, монотонность НЕ проверяется).
     /// </remarks>
     private const double ConfidenceThreshold = 0.02;
 
@@ -69,11 +69,15 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     /// </summary>
     private const int StaleThresholdSeconds = 30;
 
+    /// <summary>Окно живого темпа: учитываются только надёжные сэмплы за последние N секунд
+    /// (отзывчивость к смене этапа). Подбирается эмпирически; ~90 с покрывает 1–2 клира этапа.</summary>
+    private const int LiveRateWindowSeconds = 90;
+
     // ── Состояние ─────────────────────────────────────────────────────────────
 
     private volatile LiveStatsSnapshot _current = LiveStatsSnapshot.Empty;
 
-    /// <summary>Последний надёжный сэмпл для проверки монотонности (передаётся в валидатор).</summary>
+    /// <summary>Последний надёжный сэмпл (база для детекции смены героя и отображения «последних известных»).</summary>
     private MetricSample? _lastReliableSample;
 
     /// <summary>Скользящий буфер надёжных сэмплов для вычисления темпов.</summary>
@@ -96,6 +100,12 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     private double? _emaGoldPerHour;
     private double? _emaXpPerHour;
     private IReadOnlyDictionary<int, double> _lastChestPerHour = new Dictionary<int, double>();
+
+    /// <summary>
+    /// Нормализованный ключ класса героя, чьи сэмплы сейчас находятся в буфере (эпоха измерения).
+    /// null — эпоха ещё не инициализирована. При смене ключа буфер сбрасывается «с нуля».
+    /// </summary>
+    private string? _currentHeroClassKey;
 
     /// <summary>Время последнего диагностического лога здоровья захвата (UTC). Throttle ~30 с.</summary>
     private DateTime _lastHealthLogUtc = DateTime.MinValue;
@@ -373,6 +383,41 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         // ── Обновить скользящий буфер и последний надёжный сэмпл ─────────────
         if (sample.IsReliable)
         {
+            // ── Детекция смены героя: два независимых сигнала ──────────────────
+            //
+            // Сигнал 1 — класс героя (belt-and-suspenders поверх структурного guard в MetricsCalculator).
+            // Нормализуем класс героя из OCR-текста в известный ключ конфига (case-insensitive Contains).
+            // Защита от OCR-шума: сброс только когда новый класс РАСПОЗНАН (newClassKey != null) и
+            // реально отличается от текущей эпохи. Нераспознанный текст (null) сброс НЕ вызывает.
+            //
+            // Сигнал 2 — структурные инварианты HeroLevel/XpToLevel (HeroSwitchDetector в Core).
+            // Надёжен даже когда OCR не читает HeroClassText на кадрах переключения героя.
+            // Логика: падение уровня (герой не теряет уровни) или смена потолка XpToLevel без
+            // сигнатуры level-up (потолок меняется только при level-up, а level-up = Xp ≥ 80% потолка).
+            MetricSample? prevReliable = _lastReliableSample;
+            string? newClassKey = ResolveHeroClassKey(obs.HeroClassText, cfg);
+            bool classSwitch = newClassKey is not null
+                               && _currentHeroClassKey is not null
+                               && newClassKey != _currentHeroClassKey;
+            bool signalSwitch = prevReliable is not null
+                                && HeroSwitchDetector.IsHeroSwitch(prevReliable, sample);
+
+            if (classSwitch || signalSwitch)
+            {
+                _logger.LogInformation(
+                    "Обнаружена смена героя (class:{Cls}, signal:{Sig}); живые темпы пересчитываются с нуля.",
+                    classSwitch, signalSwitch);
+                _reliableBuffer.Clear();
+                _lastReliableSample = null;
+                _emaXpPerHour       = null;
+                _emaGoldPerHour     = null;
+                _lastChestPerHour   = new Dictionary<int, double>();
+            }
+
+            // Обновляем ключ эпохи (первая инициализация происходит без сброса, т.к. _currentHeroClassKey == null).
+            if (newClassKey is not null)
+                _currentHeroClassKey = newClassKey;
+
             _lastReliableSample = sample;
             AddToReliableBuffer(sample);
 
@@ -395,15 +440,57 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         }
 
         // ── Вычислить темпы + EMA-сглаживание ─────────────────────────────────
-        LiveRates raw = _reliableBuffer.Count > 1
-            ? _metricsCalculator.ComputeLiveRates(_reliableBuffer)
+
+        // Живой темп считаем по короткому скользящему окну (последние LiveRateWindowSeconds),
+        // а НЕ по всему буферу — иначе значение лагает и медленно сходится (этапы идут <60 с).
+        IReadOnlyList<MetricSample> recent;
+        if (_reliableBuffer.Count > 0)
+        {
+            DateTime latestUtc = _reliableBuffer[^1].TakenAtUtc;
+            var slice = new List<MetricSample>(_reliableBuffer.Count);
+            for (int i = _reliableBuffer.Count - 1; i >= 0; i--)
+            {
+                if ((latestUtc - _reliableBuffer[i].TakenAtUtc).TotalSeconds > LiveRateWindowSeconds)
+                    break;                       // буфер упорядочен по времени — дальше только старее
+                slice.Add(_reliableBuffer[i]);
+            }
+            slice.Reverse();                     // восстановить хронологический порядок для ComputeLiveRates
+            recent = slice;
+        }
+        else
+        {
+            recent = _reliableBuffer;
+        }
+
+        LiveRates raw = recent.Count > 1
+            ? _metricsCalculator.ComputeLiveRates(recent)
             : new LiveRates(0, 0, new Dictionary<int, double>());
 
-        _emaGoldPerHour = Ema(_emaGoldPerHour, raw.GoldPerHour);
-        _emaXpPerHour   = Ema(_emaXpPerHour, raw.XpPerHour);
-        _lastChestPerHour = raw.ChestPerHourByType;
+        if (recent.Count > 1)
+        {
+            if (RateOutlierDetector.IsXpRateOutlier(raw.XpPerHour, _emaXpPerHour))
+            {
+                // Переходный OCR-misread XP: ложная дельта отравила кумулятивную ставку.
+                // Отбрасываем кадр (НЕ обновляем EMA выбросом — оставляем последние корректные темпы
+                // для отображения) и сбрасываем окно, чтобы ложная дельта не держалась в буфере.
+                _logger.LogWarning(
+                    "[XpRateOutlier] raw={Raw:F0}/ч ema={Ema:F0}/ч — выброс отброшен, окно темпов сброшено.",
+                    raw.XpPerHour, _emaXpPerHour ?? 0.0);
+                _reliableBuffer.Clear();
+                _lastReliableSample = null;
+                // EMA НЕ трогаем: _emaXpPerHour/_emaGoldPerHour/_lastChestPerHour сохраняют последние корректные значения.
+            }
+            else
+            {
+                _emaGoldPerHour   = Ema(_emaGoldPerHour, raw.GoldPerHour);
+                _emaXpPerHour     = Ema(_emaXpPerHour, raw.XpPerHour);
+                _lastChestPerHour = raw.ChestPerHourByType;
+            }
+        }
+        // else (recent.Count <= 1, окно перестраивается после сброса): EMA НЕ обновляем — держим последние
+        // корректные темпы (без обнуления). Это отличие от сброса при СМЕНЕ ГЕРОЯ (там EMA=null → показывает 0).
 
-        LiveRates rates = new(_emaGoldPerHour.Value, _emaXpPerHour.Value, _lastChestPerHour);
+        LiveRates rates = new(_emaGoldPerHour ?? 0.0, _emaXpPerHour ?? 0.0, _lastChestPerHour);
 
         // ── Собрать и опубликовать снимок ─────────────────────────────────────
         DateTime? lastReliableUtc = _lastReliableSample?.TakenAtUtc;
@@ -537,6 +624,28 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     /// </summary>
     private static double Ema(double? previous, double raw)
         => previous is double p ? p + EmaAlpha * (raw - p) : raw;
+
+    /// <summary>
+    /// Нормализует сырой OCR-текст класса героя в машинный ключ из справочника <see cref="GameMechanicsConfig.HeroClasses"/>.
+    /// Сопоставление — case-insensitive Contains по <see cref="HeroClass.Key"/> и <see cref="HeroClass.DisplayName"/>.
+    /// Возвращает <see cref="HeroClass.Key"/> первого совпавшего класса, иначе <c>null</c>.
+    /// </summary>
+    private static string? ResolveHeroClassKey(string? heroClassText, GameMechanicsConfig cfg)
+    {
+        if (heroClassText is null or { Length: 0 })
+            return null;
+
+        foreach (HeroClass heroClass in cfg.HeroClasses)
+        {
+            if (heroClassText.Contains(heroClass.Key, StringComparison.OrdinalIgnoreCase) ||
+                heroClassText.Contains(heroClass.DisplayName, StringComparison.OrdinalIgnoreCase))
+            {
+                return heroClass.Key;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Задержка с поддержкой отмены; не бросает при отмене (только возвращает).

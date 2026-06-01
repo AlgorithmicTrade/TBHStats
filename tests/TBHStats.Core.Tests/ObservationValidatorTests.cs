@@ -328,27 +328,29 @@ public sealed class ObservationValidatorTests
     }
 
     // =========================================================================
-    // Монотонность золота
+    // Золото как расходуемый баланс (убывание легитимно)
     // =========================================================================
 
     /// <summary>
-    /// Gold в observation меньше, чем у prevReliable → необъяснённое убывание → IsReliable = false.
+    /// Gold в observation меньше, чем у prevReliable → легитимная трата (руны/апгрейды/магазин)
+    /// → IsReliable = true; сниженный баланс записывается в результат.
     /// </summary>
     [Fact]
-    public void Validate_GoldDecreasesFromPrevReliable_IsReliableFalse()
+    public void Validate_GoldDecreasesFromPrevReliable_LegitimateSpending_IsReliableTrue()
     {
         var prev = MakePrevReliable(gold: 10_000L);
         var obs = MakeObservation(
-            gold: 8_000L,   // убывание
+            gold: 8_000L,   // убывание — легитимная трата
             confidence: new Dictionary<string, double> { ["gold"] = 0.95 });
 
         MetricSample result = _sut.Validate(obs, prevReliable: prev, Threshold);
 
-        result.IsReliable.Should().BeFalse(because: "необъяснённое убывание Gold = нарушение sanity");
+        result.IsReliable.Should().BeTrue(because: "убывание Gold = легитимная трата (руны/прокачка/магазин), не нарушение sanity");
+        result.Gold.Should().Be(8_000L, because: "фактический (сниженный) баланс записывается в результат");
     }
 
     /// <summary>
-    /// Gold в observation больше, чем у prevReliable → монотонность соблюдена → IsReliable = true.
+    /// Gold в observation больше, чем у prevReliable → рост → IsReliable = true.
     /// </summary>
     [Fact]
     public void Validate_GoldIncreasesFromPrevReliable_IsReliableTrue()
@@ -360,11 +362,11 @@ public sealed class ObservationValidatorTests
 
         MetricSample result = _sut.Validate(obs, prevReliable: prev, Threshold);
 
-        result.IsReliable.Should().BeTrue(because: "Gold растёт — монотонность соблюдена");
+        result.IsReliable.Should().BeTrue(because: "Gold растёт — сэмпл надёжен");
     }
 
     /// <summary>
-    /// Gold в observation равен prevReliable.Gold (нулевой прирост) → не убывание → IsReliable = true.
+    /// Gold в observation равен prevReliable.Gold (нулевой прирост) → IsReliable = true.
     /// </summary>
     [Fact]
     public void Validate_GoldUnchangedFromPrevReliable_IsReliableTrue()
@@ -376,11 +378,11 @@ public sealed class ObservationValidatorTests
 
         MetricSample result = _sut.Validate(obs, prevReliable: prev, Threshold);
 
-        result.IsReliable.Should().BeTrue(because: "Gold не убывает — sanity не нарушена");
+        result.IsReliable.Should().BeTrue(because: "Gold не изменился — сэмпл надёжен");
     }
 
     /// <summary>
-    /// prevReliable = null (первая точка), Gold принят → надёжен без проверки монотонности.
+    /// prevReliable = null (первая точка), Gold принят → надёжен.
     /// </summary>
     [Fact]
     public void Validate_NoPrevReliable_GoldAccepted_IsReliableTrue()
@@ -396,7 +398,7 @@ public sealed class ObservationValidatorTests
     }
 
     /// <summary>
-    /// prevReliable.Gold = null → монотонность Gold не проверяется → sanity не нарушена.
+    /// prevReliable.Gold = null → сравнение невозможно, Gold принят → IsReliable = true.
     /// </summary>
     [Fact]
     public void Validate_PrevReliableGoldNull_GoldDecreaseNotViolation_IsReliableTrue()
@@ -409,12 +411,12 @@ public sealed class ObservationValidatorTests
 
         MetricSample result = _sut.Validate(obs, prevReliable: prev, Threshold);
 
-        result.IsReliable.Should().BeTrue(because: "если prev.Gold = null, монотонность не применима");
+        result.IsReliable.Should().BeTrue(because: "если prev.Gold = null, нет базы для сравнения — сэмпл надёжен");
     }
 
     /// <summary>
-    /// Gold observation принят, но ниже порога (не прошёл confidence) → убывание не проверяется
-    /// (поле Gold = null в результате), IsReliable зависит от других полей.
+    /// Gold observation не прошёл confidence → поле Gold = null в результате;
+    /// IsReliable определяется наличием Xp и HeroLevel.
     /// </summary>
     [Fact]
     public void Validate_GoldFailsConfidence_MonotonicityCheckNotApplied()
@@ -434,9 +436,35 @@ public sealed class ObservationValidatorTests
         MetricSample result = _sut.Validate(obs, prevReliable: prev, Threshold);
 
         result.Gold.Should().BeNull(because: "Gold отброшен по confidence");
-        // Gold не прошёл confidence → монотонность Gold не применяется → sanity от Gold не нарушена.
-        // Xp и HeroLevel приняты → IsReliable должен определяться по ним.
-        result.IsReliable.Should().BeTrue(because: "Xp и HeroLevel приняты, Gold не участвует в sanity");
+        // Xp и HeroLevel приняты → IsReliable = true.
+        result.IsReliable.Should().BeTrue(because: "Xp и HeroLevel приняты — есть значимые поля");
+    }
+
+    /// <summary>
+    /// Gold резко падает после траты (сценарий Rune): prev.Gold=200_000, obs gold=6_553.
+    /// Сэмпл надёжен, фактический (сниженный) баланс записан, xp/heroLevel перенесены.
+    /// </summary>
+    [Fact]
+    public void Validate_GoldDropsAfterSpending_SampleStillReliable_AndBalanceRecorded()
+    {
+        var prev = MakePrevReliable(gold: 200_000L, xp: 1_000_000L, heroLevel: 30);
+        var obs = MakeObservation(
+            gold: 6_553L,       // резкое падение — игрок потратил золото на руны
+            xp: 1_050_000L,
+            heroLevel: 30,
+            confidence: new Dictionary<string, double>
+            {
+                ["gold"]      = 0.9,
+                ["xp"]        = 0.85,
+                ["heroLevel"] = 0.95,
+            });
+
+        MetricSample result = _sut.Validate(obs, prevReliable: prev, Threshold);
+
+        result.IsReliable.Should().BeTrue(because: "трата золота на руны — легитимное убывание, сэмпл надёжен");
+        result.Gold.Should().Be(6_553L, because: "фактический баланс после траты должен быть записан");
+        result.Xp.Should().Be(1_050_000L, because: "Xp валиден и должен быть перенесён");
+        result.HeroLevel.Should().Be(30, because: "HeroLevel валиден и должен быть перенесён");
     }
 
     // =========================================================================
@@ -492,15 +520,16 @@ public sealed class ObservationValidatorTests
     }
 
     /// <summary>
-    /// Gold убывает И Xp убывает с level-up → Gold-убывание dominates → IsReliable = false.
+    /// Gold убывает (трата) И Xp убывает с level-up → оба события легитимны
+    /// → IsReliable = true (gold расходуем, level-up = нормальный сброс Xp).
     /// </summary>
     [Fact]
-    public void Validate_GoldDecreasesAndXpLevelUp_GoldViolationWins_IsReliableFalse()
+    public void Validate_GoldSpendingWithXpLevelUp_IsReliableTrue()
     {
         var prev = MakePrevReliable(gold: 20_000L, xp: 40_000L, heroLevel: 7);
         var obs = MakeObservation(
-            gold: 15_000L,  // убывание Gold
-            xp: 500L,       // level-up Xp
+            gold: 15_000L,  // убывание Gold — трата на руны/прокачку
+            xp: 500L,       // level-up Xp — сброс после повышения уровня
             heroLevel: 8,
             confidence: new Dictionary<string, double>
             {
@@ -511,7 +540,7 @@ public sealed class ObservationValidatorTests
 
         MetricSample result = _sut.Validate(obs, prevReliable: prev, Threshold);
 
-        result.IsReliable.Should().BeFalse(because: "убывание Gold = sanity-нарушение, даже при легитимном level-up Xp");
+        result.IsReliable.Should().BeTrue(because: "убывание Gold — легитимная трата; level-up Xp — легитимный сброс; оба события нормальны");
     }
 
     // =========================================================================

@@ -4,8 +4,14 @@ using TBHStats.Core.Models;
 
 /// <summary>
 /// Реализация <see cref="IObservationValidator"/>: валидация сырого наблюдения
-/// через confidence-порог и sanity-проверки (R4, FR-005/010, T024).
+/// через confidence-порог (R4, FR-005/010, T024).
 /// </summary>
+/// <remarks>
+/// Золото — <b>расходуемый баланс</b>: игрок тратит его на прокачку рун, апгрейды и магазин,
+/// поэтому общий баланс легитимно убывает. Убывание золота <b>не является нарушением sanity</b>
+/// и не делает сэмпл ненадёжным. Темп «золото/час» считается только по положительным дельтам
+/// (заработок) в <c>MetricsCalculator</c> — траты на убыль не влияют.
+/// </remarks>
 public sealed class ObservationValidator : IObservationValidator
 {
     /// <inheritdoc/>
@@ -21,16 +27,16 @@ public sealed class ObservationValidator : IObservationValidator
         int?   heroLevel = Accept(observation.PerFieldConfidence, "heroLevel",  confidenceThreshold) ? observation.HeroLevel : null;
         long?  heroDamage= Accept(observation.PerFieldConfidence, "heroDamage", confidenceThreshold) ? observation.HeroDamage: null;
 
-        // ── Sanity: монотонность золота ──
-        // Проверяем только если Gold прошёл confidence и prevReliable.Gold задан.
-        bool goldViolation = gold.HasValue
-                          && prevReliable?.Gold.HasValue == true
-                          && gold.Value < prevReliable.Gold!.Value;
-
         // ── IsReliable ──
         // Значимые поля: Gold, Xp, HeroLevel. Хотя бы одно должно быть принято.
+        // Золото — расходуемый баланс (тратится на руны/прокачку/магазин), а НЕ монотонный
+        // кумулятив. Убывание золота легитимно и НЕ делает сэмпл ненадёжным (иначе виджет
+        // замораживается после траты, пока баланс не дорастёт обратно — наблюдалось при
+        // открытии вкладки Rune). Темп «золото/час» считает только положительные дельты
+        // (заработок) — см. MetricsCalculator; убыль игнорируется, поэтому трата золота
+        // не искажает темп.
         bool hasSignificantField = gold.HasValue || xp.HasValue || heroLevel.HasValue;
-        bool isReliable = hasSignificantField && !goldViolation;
+        bool isReliable = hasSignificantField;
 
         // ── Сундуки: копируем ключ→MetricSampleChest ──
         var chests = new List<MetricSampleChest>(observation.Chests.Count);

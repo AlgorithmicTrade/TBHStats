@@ -18,6 +18,36 @@ using TBHStats.Core.Models;
 /// Для сундуков аналогично — отрицательная дельта (открытие) даёт вклад 0,
 /// интервал участвует в знаменателе.
 /// </para>
+/// <para>
+/// Защита от разрывов опыта — два уровня:
+/// <list type="number">
+/// <item>
+/// <term>Структурный guard по уровню героя (первичный):</term>
+/// <description>
+/// Легитимный переход <c>HeroLevel</c> между соседними live-сэмплами — строго 0 (тот же уровень)
+/// или +1 (одиночный level-up). Любой иной переход при известных обоих уровнях
+/// (<c>levelDelta != 0 &amp;&amp; levelDelta != 1</c>, включая отрицательный — откат/разрыв)
+/// трактуется как разрыв (смена героя, мультиуровневый скачок, misread heroLevel).
+/// Такая пара полностью исключается из расчёта опыта/час — ни в числитель (<c>xpDeltaSum</c>),
+/// ни в знаменатель (<c>xpElapsedSum</c>). Надёжно ловит смену героя в late-game,
+/// где межгеройская XP-дельта может быть меньше <c>a.XpToLevel</c>
+/// (магнитудный guard в этом случае не срабатывает).
+/// </description>
+/// </item>
+/// <item>
+/// <term>Магнитудный guard (вторичный, для Δуровня == 0):</term>
+/// <description>
+/// В не-level-up-ветке (простое вычитание, <c>levelDelta == 0</c>) положительная XP-дельта,
+/// превышающая <c>a.XpToLevel</c>, физически невозможна в пределах одного уровня.
+/// Ловит внутриуровневые OCR-выбросы, которые структурный guard по уровню пропускает
+/// (оба уровня одинаковы). Пара также исключается целиком.
+/// </description>
+/// </item>
+/// </list>
+/// Компенсированная level-up-ветка (<c>nearFull &amp;&amp; levelUpByOne</c>)
+/// обоими guard'ами не затрагивается — <c>levelDelta == +1</c> легитимен.
+/// Золото и сундуки в той же итерации обрабатываются независимо.
+/// </para>
 /// </remarks>
 public sealed class MetricsCalculator : IMetricsCalculator
 {
@@ -67,33 +97,64 @@ public sealed class MetricsCalculator : IMetricsCalculator
 
                 if (plausible)
                 {
-                    double xpDelta;
+                    // Структурный guard по уровню героя (первичный).
+                    // Легитимный переход HeroLevel между соседними live-сэмплами:
+                    //   levelDelta == 0  — тот же уровень (норма)
+                    //   levelDelta == +1 — одиночный level-up (норма)
+                    // Любой иной переход (включая отрицательный) при обоих известных уровнях —
+                    // разрыв: смена героя, мультиуровневый скачок, misread heroLevel.
+                    // Условие именно (levelDelta != 0 && levelDelta != 1), а НЕ Math.Abs > 1:
+                    // падение уровня (levelDelta == -1) — тоже разрыв и должно исключаться.
+                    bool bothLevelsKnown = a.HeroLevel.HasValue && b.HeroLevel.HasValue;
+                    int  levelDelta       = bothLevelsKnown ? b.HeroLevel!.Value - a.HeroLevel!.Value : 0;
+                    bool heroLevelDiscontinuity = bothLevelsKnown && levelDelta != 0 && levelDelta != 1;
 
-                    bool levelUpByOne = a.HeroLevel.HasValue && b.HeroLevel.HasValue
-                                        && b.HeroLevel.Value == a.HeroLevel.Value + 1;
-
-                    // Level-up компенсацию применяем ТОЛЬКО если a.Xp реально у потолка
-                    // (≥ 0.8·xpToLevel). Настоящий level-up происходит у полного опыта;
-                    // «инкремент уровня» при низком a.Xp — это misread heroLevel, и
-                    // компенсация (xpToLevel − a.Xp) инжектировала бы ~весь xpToLevel (выброс).
-                    bool nearFull = a.XpToLevel.HasValue
-                                    && a.Xp.Value >= a.XpToLevel.Value * 0.8;
-
-                    if (levelUpByOne && nearFull)
+                    if (!heroLevelDiscontinuity)
                     {
-                        // Level-up компенсация: (xpToLevel - a.Xp) + b.Xp
-                        xpDelta = (double)(a.XpToLevel!.Value - a.Xp.Value) + b.Xp.Value;
-                    }
-                    else
-                    {
-                        xpDelta = b.Xp.Value - a.Xp.Value;
-                    }
+                        double xpDelta;
 
-                    xpElapsedSum += intervalSeconds;
-                    if (xpDelta > 0.0)
-                    {
-                        xpDeltaSum += xpDelta;
+                        bool levelUpByOne = bothLevelsKnown && levelDelta == 1;
+
+                        // Level-up компенсацию применяем ТОЛЬКО если a.Xp реально у потолка
+                        // (≥ 0.8·xpToLevel). Настоящий level-up происходит у полного опыта;
+                        // «инкремент уровня» при низком a.Xp — это misread heroLevel, и
+                        // компенсация (xpToLevel − a.Xp) инжектировала бы ~весь xpToLevel (выброс).
+                        bool nearFull = a.XpToLevel.HasValue
+                                        && a.Xp.Value >= a.XpToLevel.Value * 0.8;
+
+                        bool isDiscontinuity = false;
+
+                        if (levelUpByOne && nearFull)
+                        {
+                            // Level-up компенсация: (xpToLevel - a.Xp) + b.Xp
+                            xpDelta = (double)(a.XpToLevel!.Value - a.Xp.Value) + b.Xp.Value;
+                        }
+                        else
+                        {
+                            xpDelta = b.Xp.Value - a.Xp.Value;
+
+                            // Магнитудный guard (вторичный, для Δуровня == 0):
+                            // в пределах одного уровня прирост опыта не может превысить
+                            // потолок уровня a.XpToLevel. Положительная дельта выше потолка
+                            // — это внутриуровневый OCR-выброс; пара исключается целиком
+                            // из расчёта опыта/час (и из числителя, и из знаменателя).
+                            if (a.XpToLevel.HasValue && xpDelta > (double)a.XpToLevel.Value)
+                            {
+                                isDiscontinuity = true;
+                            }
+                        }
+
+                        if (!isDiscontinuity)
+                        {
+                            xpElapsedSum += intervalSeconds;
+                            if (xpDelta > 0.0)
+                            {
+                                xpDeltaSum += xpDelta;
+                            }
+                        }
                     }
+                    // При heroLevelDiscontinuity == true пара целиком пропускается
+                    // для опыта/час (ни в xpDeltaSum, ни в xpElapsedSum).
                 }
             }
 

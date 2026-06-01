@@ -32,5 +32,9 @@ internal sealed class ChestTypeConfiguration : IEntityTypeConfiguration<ChestTyp
         builder.Property(e => e.IsActive).IsRequired();
 
         builder.HasIndex(e => e.Key).IsUnique();
+
+        // PanelColor — in-memory only; не должно попадать в схему БД.
+        // Ignore предотвращает генерацию новой миграции (T062-fix).
+        builder.Ignore(e => e.PanelColor);
     }
 }

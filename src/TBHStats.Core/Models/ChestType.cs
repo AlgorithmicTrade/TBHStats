@@ -27,4 +27,11 @@ public sealed class ChestType
 
     /// <summary>Активна ли запись (soft-delete).</summary>
     public bool IsActive { get; init; } = true;
+
+    /// <summary>
+    /// Якорный цвет фона плашки сундука в MainZone для визуальной идентификации типа (T062-fix).
+    /// Не персистится в БД — используется только из in-memory конфига.
+    /// null допустим: старые или кастомные типы без цветового якоря.
+    /// </summary>
+    public PanelColor? PanelColor { get; init; }
 }

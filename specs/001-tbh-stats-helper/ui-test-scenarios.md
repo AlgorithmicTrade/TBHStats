@@ -1,6 +1,8 @@
 # UI Test Scenarios: TBHStats QA-харнесс (аудит интерфейса живой игры)
 
-**Feature**: `001-tbh-stats-helper` | **Date**: 2026-05-31
+> **⚠️ ВЫВЕДЕНО ИЗ ОБЪЁМА v1 (2026-06-01).** Описанный здесь E2E UI-тест-харнесс (FR-022…FR-027 / SC-012…SC-014) **исключён из v1** — E2E-тесты признаны ненужными (см. spec.md «Out of Scope», tasks.md Phase 7 удалена). Документ сохранён как **референс** на случай будущего возрождения; в v1 не реализуется. Продукт и тесты v1 — observe-only без инъекции ввода.
+
+**Feature**: `001-tbh-stats-helper` | **Date**: 2026-05-31 (статус: out-of-scope-v1 с 2026-06-01)
 **Связано**: FR-022…FR-027, SC-012…SC-014, research.md R12, constitution §Security (carve-out)
 
 ## Назначение

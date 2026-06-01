@@ -4,10 +4,12 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using TBHStats.Capture;
+using TBHStats.Capture.Chests;
 using TBHStats.Capture.Ocr;
 using TBHStats.Capture.Wgc;
 using TBHStats.Core.Mechanics;
 using TBHStats.Core.Models;
+using TBHStats.Core.Parsing;
 using TBHStats.Data.Repositories;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics.Imaging;
@@ -26,6 +28,8 @@ public sealed partial class CalibrationViewModel : ObservableObject
     private readonly IGameMechanics _gameMechanics;
     private readonly ICaptureSession _captureSession;
     private readonly IOcrReader _ocrReader;
+    private readonly IChestPanelAnalyzer _chestPanelAnalyzer;
+    private readonly IChestZoneAnalyzer _chestZoneAnalyzer;
 
     // Последний захваченный кадр; удерживается для команды TestSelectedRoiOcrAsync.
     // Диспозится при каждом новом захвате (удерживается максимум один кадр).
@@ -117,17 +121,23 @@ public sealed partial class CalibrationViewModel : ObservableObject
     /// <param name="settings">Репозиторий настроек (загрузка / сохранение ROI).</param>
     /// <param name="gameMechanics">Конфиг механик (вкладки, FieldKey).</param>
     /// <param name="captureSession">Сессия захвата кадра игры.</param>
-    /// <param name="ocrReader">Движок OCR для живого предпросмотра выбранной ROI.</param>
+    /// <param name="ocrReader">Движок OCR для живого предпросмотра текстовых ROI.</param>
+    /// <param name="chestPanelAnalyzer">Визуальный анализатор одиночной плашки сундука (тип по цвету + число точек).</param>
+    /// <param name="chestZoneAnalyzer">Зонный анализатор: локализует все плашки в широкой ROI и считает точки по рядам (ADR-023).</param>
     public CalibrationViewModel(
         ISettingsRepository settings,
         IGameMechanics gameMechanics,
         ICaptureSession captureSession,
-        IOcrReader ocrReader)
+        IOcrReader ocrReader,
+        IChestPanelAnalyzer chestPanelAnalyzer,
+        IChestZoneAnalyzer chestZoneAnalyzer)
     {
         _settings = settings;
         _gameMechanics = gameMechanics;
         _captureSession = captureSession;
         _ocrReader = ocrReader;
+        _chestPanelAnalyzer = chestPanelAnalyzer;
+        _chestZoneAnalyzer = chestZoneAnalyzer;
 
         GameMechanicsConfig cfg = gameMechanics.Current;
 
@@ -360,6 +370,67 @@ public sealed partial class CalibrationViewModel : ObservableObject
         try
         {
             RoiCalibration roi = SelectedItem.ToDomain();
+
+            // Для зонной ROI chestZone вызываем зонный анализатор (ADR-023):
+            // локализует все плашки по цвету и возвращает число точек для каждой.
+            if (roi.FieldKey == "chestZone")
+            {
+                GameMechanicsConfig cfg = _gameMechanics.Current;
+                // Не используем ConfigureAwait(false): возвращаемся на UI-поток для присваивания свойств.
+                IReadOnlyDictionary<int, int> zone = await _chestZoneAnalyzer.AnalyzeZoneAsync(_lastFrame, roi, cfg, ct);
+
+                if (zone.Count > 0)
+                {
+                    // Собираем строку по всем найденным типам, упорядоченную по SortOrder.
+                    IEnumerable<string> parts = zone
+                        .OrderBy(kv =>
+                        {
+                            ChestType? ct2 = cfg.ChestTypes.FirstOrDefault(c => c.Id == kv.Key);
+                            return ct2?.SortOrder ?? kv.Key;
+                        })
+                        .Select(kv =>
+                        {
+                            ChestType? ct2 = cfg.ChestTypes.FirstOrDefault(c => c.Id == kv.Key);
+                            string label = ct2?.DisplayName ?? kv.Key.ToString();
+                            return $"{label}: {kv.Value}";
+                        });
+
+                    OcrPreviewText = string.Join(", ", parts);
+                    OcrPreviewStatus = $"Зона: распознано плашек — {zone.Count}";
+                }
+                else
+                {
+                    OcrPreviewText = "(плашки не распознаны)";
+                    OcrPreviewStatus = "В зоне не найдено плашек сундуков: ROI должна покрывать всю группу плашек (по горизонтали и с точками снизу)";
+                }
+
+                return;
+            }
+
+            // Для chest-ROI используем визуальный анализатор (тип по цвету плашки + число точек),
+            // OCR здесь бесполезен — точки графические, текста нет.
+            if (ChestFieldKey.TryParse(roi.FieldKey, out _, out _))
+            {
+                GameMechanicsConfig cfg = _gameMechanics.Current;
+                // Не используем ConfigureAwait(false): возвращаемся на UI-поток для присваивания свойств.
+                ChestPanelReading reading = await _chestPanelAnalyzer.AnalyzeChestPanelAsync(_lastFrame, roi, cfg, ct);
+
+                if (reading.ChestTypeId is int typeId)
+                {
+                    ChestType? chestType = cfg.ChestTypes.FirstOrDefault(c => c.Id == typeId);
+                    string label = chestType?.DisplayName ?? typeId.ToString();
+                    OcrPreviewText = $"{label}: {reading.DotCount} точк(а/и)";
+                    OcrPreviewStatus = $"Плашка распознана · совпадение {reading.PanelMatch:F2}";
+                }
+                else
+                {
+                    OcrPreviewText = "(плашка не распознана)";
+                    OcrPreviewStatus = "Тип сундука не определён: ROI должна покрывать цветную плашку целиком";
+                }
+
+                return;
+            }
+
             // Не используем ConfigureAwait(false): возвращаемся на UI-поток для присваивания свойств.
             OcrResult res = await _ocrReader.ReadAsync(_lastFrame, roi, ct);
 
@@ -375,7 +446,7 @@ public sealed partial class CalibrationViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            OcrPreviewStatus = $"Ошибка OCR: {ex.Message}";
+            OcrPreviewStatus = $"Ошибка: {ex.Message}";
         }
     }
 

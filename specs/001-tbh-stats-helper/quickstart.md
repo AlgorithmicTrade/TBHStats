@@ -82,19 +82,17 @@ MSBuild src/TBHStats.App/TBHStats.App.csproj `
 
 **Ограничение**: `dotnet build /p:WindowsPackageType=MSIX` завершается ошибкой MSB4018 в headless-CLI окружении из-за бага `Microsoft.Windows.SDK.BuildTools.MSIX` 1.7.x (не находит `System.Security.Permissions` в MSBuild-хосте). Для `dotnet build`/тестов всегда использовать `WindowsPackageType=None`.
 
-## Запуск UI-тестов живой игры (QA-харнесс)
+## UI-тесты живой игры (QA-харнесс) — выведено из объёма v1 (2026-06-01)
 
-E2E-аудит интерфейса (FR-022…FR-027) — отдельный проект `tests/TBHStats.UiTests` (**FlaUI + визуальная локализация (OCR) + SendInput**, НЕ Playwright). Прогоняется против **реально запущенной** игры; не входит в поставку (продукт observe-only).
+E2E-аудит интерфейса поверх живой игры (бывш. FR-022…FR-027 / SC-012…SC-014: FlaUI + визуальная локализация + SendInput, сценарии TS-00…TS-10) **исключён из v1** — E2E-тесты признаны ненужными. См. spec.md «Out of Scope».
+
+В v1 корректность считывания проверяется unit/integration-тестами на реальных скриншотах-фикстурах (OCR без моков), **без инъекции ввода** в игру:
 
 ```powershell
-# Требуется запущенная игра Task Bar Hero. Харнесс кликает в игре (human-like) для навигации по разделам.
-# Safety-Guard запрещает необратимые действия (Runes/Cube/Stash/Trade). Не запускать во время важной игровой сессии.
-dotnet test tests/TBHStats.UiTests        # сценарии TS-00…TS-10 (ui-test-scenarios.md)
+dotnet test tests/TBHStats.Capture.Tests   # OCR-фикстуры на реальных скриншотах (T049), латентность (T052)
+dotnet test tests/TBHStats.Core.Tests       # домен, парсинг, оптимизация
+dotnet test tests/TBHStats.Data.Tests        # реальный временной файловый SQLite (без моков)
 ```
-
-- Пререквизит: NuGet `FlaUI.Core`, `FlaUI.UIA3` (подключаются в проекте).
-- Конфиг: `ClickDelayRangeMs` (150–600), `WaitTimeoutMs` (5000), `RepeatRuns` (5), `ForbiddenElements` (запрещённые к клику).
-- Детерминизм: повтор серии прогонов даёт одинаковый вердикт (SC-012).
 
 ## Первый запуск (пользовательский сценарий)
 

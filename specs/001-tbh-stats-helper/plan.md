@@ -19,7 +19,7 @@
 - Charts: **LiveCharts2** (`LiveChartsCore.SkiaSharpView.WinUI`) — основной кандидат; ScottPlot как альтернатива (решено в research.md)
 - `CommunityToolkit.Mvvm` — MVVM (ObservableObject, RelayCommand)
 **Storage**: локальный файл SQLite (`%LOCALAPPDATA%\TBHStats\tbhstats.db`)
-**Testing**: xUnit + FluentAssertions (Core/Data логика); фикстуры-скриншоты для OCR (Capture). **UI-тесты живой игры** — отдельный проект `TBHStats.UiTests` на **FlaUI + визуальная локализация (OCR, переиспользуя Capture) + SendInput** (human-like ввод), по сценариям `ui-test-scenarios.md` (FR-022…FR-027). НЕ Playwright (браузерный). Харнесс не входит в поставку (observe-only продукта сохранён через carve-out конституции v2.2.0)
+**Testing**: xUnit + FluentAssertions (Core/Data логика); OCR — на реальных скриншотах-фикстурах игры, без моков (Capture). Продукт **и тесты v1** строго observe-only (ввод в игру не инжектируется). *(E2E UI-тест-харнесс поверх живой игры — бывш. FR-022…FR-027 на FlaUI/SendInput по `ui-test-scenarios.md` — **выведен из объёма v1** 2026-06-01; см. spec.md «Out of Scope».)*
 **Target Platform**: Windows 11 (x64/arm64), один локальный пользователь
 **Project Type**: single (десктоп) — мультипроектное .NET-решение (Core / Capture / Data / App; +future Remote, MAUI)
 **Performance Goals**:
@@ -53,7 +53,7 @@
 | IX. Error Handling | ✅ PASS | Типизированные ошибки захвата/OCR; «окно недоступно» = состояние ожидания, не throw (FR-005). |
 | X. Observability | ✅ PASS | Структурное логирование (Microsoft.Extensions.Logging), метрики уверенности OCR; без секретов в логах. |
 | XI. Accessibility (RECOMMENDED) | ✅ PASS | Клавиатура для основных действий, контраст, Light/Dark, тип сундука не только цветом. |
-| Security: observe-only + QA carve-out (v2.2.0) | ✅ PASS | Поставляемый продукт строго observe-only (без инъекций ввода). QA-харнесс `TBHStats.UiTests` инжектит ввод только в тест-режиме, не входит в поставку, с Safety-Guard (запрет необратимых действий) — соответствует поправке конституции v2.2.0. |
+| Security: observe-only (v2.2.0) | ✅ PASS | Поставляемый продукт **и тесты v1** строго observe-only — ввод в игру не инжектируется ничем. E2E UI-тест-харнесс (под который вводился QA carve-out v2.2.0) **выведен из объёма v1** (2026-06-01); карв-аут остаётся в конституции как неиспользуемая permissive-норма (синхронизация — отдельной Amendment Procedure, не блокирует гейт). |
 
 **Violations requiring justification**: нет. Конфликт «конституция требовала TypeScript» снят легитимной поправкой конституции (одобрено пользователем 2026-05-31), а не обходом гейта. Complexity Tracking не требуется.
 
@@ -104,10 +104,10 @@ src/
 
 tests/
 ├── TBHStats.Core.Tests/      # оптимизация, парсинг чисел, конфиг механик
-├── TBHStats.Capture.Tests/   # ROI-маппинг, confidence-фильтр, парсинг OCR-вывода (на фикстурах-изображениях)
-├── TBHStats.Data.Tests/      # репозитории/агрегаты на in-memory/temp SQLite (реальный SQLite, не мок)
-└── TBHStats.UiTests/         # E2E-аудит живой игры: FlaUI + визуальная локализация (OCR) + SendInput (human-like),
-                              #   Safety-Guard (запрет мутаций), сценарии ui-test-scenarios.md. Не входит в поставку.
+├── TBHStats.Capture.Tests/   # ROI-маппинг, confidence-фильтр, парсинг OCR-вывода (на реальных скриншотах-фикстурах)
+└── TBHStats.Data.Tests/      # репозитории/агрегаты на реальном временном файловом SQLite (НЕ in-memory-провайдер, без моков)
+
+# (E2E UI-тест-харнесс TBHStats.UiTests — FR-022…FR-027 — выведен из объёма v1 2026-06-01, см. spec.md «Out of Scope»)
 
 TBHStats.sln
 ```

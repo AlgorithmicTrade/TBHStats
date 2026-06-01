@@ -5,12 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased]
 
 ## [0.1.8] - 2026-06-01
 
 ### Fixed
 - **LiveStats**: устранить скачки опыта/час, заморозку при трате золота и misread урона (de01016)
+  - **Core/MetricsCalculator**: structural guard разрыва по переходу `HeroLevel` (легитимно 0 или +1) + магнитудный guard (`xpDelta > XpToLevel`) — разрывные межсэмпловые XP-дельты (смена героя/этапа, misread) исключаются из темпа.
+  - **Core/HeroSwitchDetector** (новый): детекция смены героя по падению уровня и смене `XpToLevel` без сигнатуры level-up — надёжный сигнал, сопутствующий опыту (срабатывает даже при null `HeroLevel`/класса на кадре).
+  - **Core/RateOutlierDetector** (новый): отброс выброса ставки опыт/ч (`raw > max(EMA×6, 5M)`) — переходные OCR-misread XP не отравляют кумулятив, независимо от триггера.
+  - **App/StatsOrchestrator**: сброс окна темпов при смене героя; живой темп по короткому скользящему окну `LiveRateWindowSeconds=90 с` — быстрая сходимость и реакция на смену этапа вместо лага кумулятивного 5-мин буфера.
+  - **Core/ObservationValidator**: золото — расходуемый баланс (трата на руны/апгрейды/магазин), монотонность убрана из критерия надёжности — устранено зависание виджета после траты золота (ADR-020).
+  - **Capture/OcrReader**: паддинг мелких кропов перед апскейлом (`min(w,h) < 40` → 6px) — починен misread десятичной запятой в уроне («126,9» больше не «12619»).
 
 ## [0.1.7] - 2026-06-01
 

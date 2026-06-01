@@ -37,7 +37,7 @@ tests/TBHStats.Core.Tests   tests/TBHStats.Capture.Tests   tests/TBHStats.Data.T
 
 ### Карта исполнителей (P003)
 
-Сокращения: **WINUI** = `dotnet-winui-developer` (Core-домен + App/WinUI), **CAP** = `windows-capture-ocr-specialist` (TBHStats.Capture), **DATA** = `efcore-sqlite-specialist` (TBHStats.Data), **TEST** = `dotnet-test-writer` (xUnit/FluentAssertions), **UIA** = `dotnet-uiautomation-specialist` (TBHStats.UiTests), **MAIN** = главная сессия (тривиальное).
+Сокращения: **WINUI** = `dotnet-winui-developer` (Core-домен + App/WinUI), **CAP** = `windows-capture-ocr-specialist` (TBHStats.Capture), **DATA** = `efcore-sqlite-specialist` (TBHStats.Data), **TEST** = `dotnet-test-writer` (xUnit/FluentAssertions), **MAIN** = главная сессия (тривиальное).
 
 | Задача | Executor | Параллельность |
 |--------|----------|----------------|
@@ -70,12 +70,6 @@ tests/TBHStats.Core.Tests   tests/TBHStats.Capture.Tests   tests/TBHStats.Data.T
 | T049, T054 | TEST | [P] |
 | T050 | MAIN (docs) | [P] |
 | T051 | MAIN + WINUI | acceptance-smoke (нужна игра+SDK) |
-| T055, T056 | UIA | [P] |
-| T057 | UIA | после T055/T014/T022 |
-| T058 | UIA | после T057 |
-| T059 | UIA | после T056/T057/T058 |
-| T060 | UIA | после T059/T026 |
-| T061 | UIA | после T060 |
 
 ---
 
@@ -225,24 +219,6 @@ tests/TBHStats.Core.Tests   tests/TBHStats.Capture.Tests   tests/TBHStats.Data.T
 
 ---
 
-## Phase 7: UI Test Harness — аудит живой игры (QA, FR-022…FR-027)
-
-> **Порядок**: номер фазы — последовательная метка, а НЕ строгий порядок. Phase 7 зависит только от US1 (T022/T026) и может разрабатываться параллельно с US2/US3/Polish, не дожидаясь их завершения.
-
-**Purpose**: «нехрупкие» детерминированные E2E-тесты поверх реально запущенной игры; харнесс сам навигирует по интерфейсу человекоподобными кликами и аудирует детекцию разделов/чтение значений. **Не входит в поставку** (observe-only продукта сохранён, carve-out конституции v2.2.0). Инструмент — FlaUI + визуальная локализация (OCR, переиспользуя Capture) + SendInput. **НЕ Playwright** (браузерный).
-
-- [ ] T055 [P] Создать проект `tests/TBHStats.UiTests/` (xUnit) + подключить FlaUI (`FlaUI.Core`, `FlaUI.UIA3`) + ссылку на `TBHStats.Capture`
-- [ ] T056 [P] Человекоподобный инжектор ввода (SendInput через FlaUI): клик в случайную точку в границах элемента, случайная задержка в диапазоне, easing курсора в `tests/TBHStats.UiTests/Input/HumanLikeInput.cs` (FR-024)
-- [ ] T057 Визуальный локатор элементов: OCR названий разделов/кнопок через `TBHStats.Capture` → bounding box; режим UIA если доступен; Auto-выбор в `tests/TBHStats.UiTests/Locator/ElementLocator.cs` (FR-023) (depends on T055, T014, T022)
-- [ ] T058 Safety-Guard: запрет кликов по запрещённым элементам (Runes upgrade, Cube craft/recycle, Stash move, Trade ship, любые sell/spend) + лог попыток в `tests/TBHStats.UiTests/Safety/SafetyGuard.cs` (FR-026) (depends on T057)
-- [ ] T059 Раннер сценариев: poll-with-timeout ожидания, ассерты по распознанному состоянию, повтор N прогонов (детерминизм) в `tests/TBHStats.UiTests/ScenarioRunner.cs` (FR-025) (depends on T056, T057, T058)
-- [ ] T060 Реализовать **активные** сценарии TS-00, TS-02…TS-10 из `ui-test-scenarios.md` (источники данных, следование за окном, перекрытие, human-like аудит, safety, детерминизм). **TS-01 (section sweep) ОТКЛЮЧЁН** — неверная формулировка, будет переписан позже, в этой задаче не реализуется. В `tests/TBHStats.UiTests/Scenarios/` (FR-022, FR-027) (depends on T059, T026)
-- [ ] T061 [P] Отчётность/вердикты харнесса: стабильность серии (SC-012), покрытие 9 разделов + 0 мутаций (SC-013), человекоподобность кликов (SC-014) в `tests/TBHStats.UiTests/Reporting/` (depends on T060)
-
-**Checkpoint**: QA-харнесс аудирует весь интерфейс живой игры, детерминированно и безопасно.
-
----
-
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -254,7 +230,6 @@ tests/TBHStats.Core.Tests   tests/TBHStats.Capture.Tests   tests/TBHStats.Data.T
 - **US2 (Phase 4)** → после Foundational; переиспользует пайплайн захвата US1 (T023/T026) для детекции завершения этапа
 - **US3 (Phase 5)** → после Foundational; использует репозиторий сэмплов US2 (T037)
 - **Polish (Phase 6)** → после нужных US
-- **UI Test Harness (Phase 7)** → после US1 (T022/T026 — есть что аудировать); полное покрытие — после US2 (разделы Portal/Status задействованы в записи забегов). Может разрабатываться параллельно с US2/US3.
 
 ### Cross-story notes
 
@@ -334,11 +309,12 @@ Task: "T021 Тесты валидации наблюдений в tests/TBHStats
 
 ## Summary
 
-- **Всего задач**: 61 (T001–T061) + 4 планирования (P001–P004)
-- **По историям**: Setup 4 · Foundational 14 (T005–T018) · US1 13 (T019–T031) · US2 11 (T032–T042) · US3 4 (T043–T046) · Polish 8 (T047–T054) · UI Test Harness 7 (T055–T061)
-- **Тестов**: 12 unit/integration (T016–T021, T032–T034, T043, T049, T054) + E2E-харнесс (T055–T061, сценарии TS-00…TS-10)
-- **MVP**: Phase 1 + Phase 2 + US1 (T001–T031). QA-харнесс (Phase 7) — после MVP, не входит в поставку
+- **Всего задач**: 54 (T001–T054) + T006c + 4 планирования (P001–P004). Phase 7 (E2E QA-харнесс, T055–T061) **исключена из объёма** — see ниже.
+- **По историям**: Setup 4 · Foundational 14 (T005–T018, +T006c) · US1 13 (T019–T031) · US2 11 (T032–T042) · US3 4 (T043–T046) · Polish 8 (T047–T054)
+- **Тестов**: 13 unit/integration (T016–T021, T032–T034, T043, T049, T052, T054) — реальный SQLite + фикстуры-скриншоты, без моков
+- **MVP**: Phase 1 + Phase 2 + US1 (T001–T031)
 - **Параллельных групп**: см. Parallel Opportunities (макс. выигрыш в Foundational и блоках тестов)
+- **Исключено из объёма (2026-06-01)**: Phase 7 — детерминированный E2E UI-харнесс поверх живой игры (FlaUI + SendInput, FR-022…FR-027, сценарии TS-00…TS-10). E2E-тесты признаны ненужными; задачи T055–T061 удалены.
 
 ---
 
@@ -346,9 +322,20 @@ Task: "T021 Тесты валидации наблюдений в tests/TBHStats
 
 > Зафиксировано по итогам живого прогона на реальной игре. Не входит в текущий объём MVP/v1; вернуться после стабилизации live-статистики. Контекст и решения — ADR-019, GAME-FACTS §2/§5–§6, ARCHITECTURE §3/§5/§9.
 
-- [ ] **T062 — Визуальный подсчёт сундуков.** «Точки» под иконками сундуков **графические, не текст** → OCR их не считает. Реализовать визуальный детектор: подсчёт заполненных точек под иконкой каждого типа (анализ изображения). Инфраструктура `chest:<тип>@N` + `IChestLayoutResolver` (раскладка/позиция) сохраняется — меняется источник счёта (визуальный вместо OCR). [Story: US1/US2]
+- [X] **T062 — Визуальный подсчёт сундуков.** «Точки» под иконками сундуков **графические, не текст** → OCR их не считает. Реализовать визуальный детектор: подсчёт заполненных точек под иконкой каждого типа (анализ изображения). Инфраструктура `chest:<тип>@N` + `IChestLayoutResolver` (раскладка/позиция) сохраняется — меняется источник счёта (визуальный вместо OCR). [Story: US1/US2]
+  **РЕЗУЛЬТАТ (эволюция по итогам живой калибровки):** визуальный счёт точек реализован, затем дважды доработан под реальную игру:
+  - **ADR-021** — базовый детектор `IChestDotCounter`/`ChestDotCounter`: luminance Bgra8 → run-ы тёмных колонок = заполненные точки (тёмный квадрат = заполнено, белый = пусто; число пустых варьируется — ёмкость качается в Rune). Тест `chests.jpg` red=1/blue=1/brown=2.
+  - **ADR-022** — идентификация типа по **цвету фона плашки** (`ChestType.PanelColor` якоря red/blue/brown в `CreateDefault`, EF-ignore, без миграции) вместо позиционной `@N`-схемы: исправлен фантом (ключ `chest:red@2` над синей плашкой → blue).
+  - **ADR-023 (актуальный)** — **зонный детектор** `IChestZoneAnalyzer`/`ChestZoneAnalyzer`: одна ROI `chestZone` на всю группу → горизонтальная сегментация плашек по цвету → масштабонезависимый счёт точек в нижнем поясе. Устраняет промахи переуплотнения группы и недосчёт −1 от ручной обрезки. `FieldExtractor`: `chestZone` — приоритетный путь, per-ROI `chest:*` — fallback. Калибровка: проверка `chestZone`/`chest:*`-ROI через детектор (не OCR). Верификация на **двух реальных фикстурах**: `chests.jpg` {red:1,blue:1,brown:2}, `main.jpg` {blue:3,brown:3, red отсутствует}. ADR-018/021/022 → Superseded by ADR-023.
+  - **Известное ограничение (unverified):** счёт сворачивает ряды точек в один профиль → корректен для ≤5 точек (один ряд); 2-й ряд (6+ сундуков одного типа) не суммируется — нужна фикстура с 6+ для реализации/проверки. Живая точность (DPI/масштаб/тема) — на прогоне T051.
+  - **СТАТУС (2026-06-01, решение пользователя): обнаружение сундуков ВРЕМЕННО ОТКЛЮЧЕНО** в рабочем пайплайне и UI (не оправдывает затраты на доработку сейчас; вернуться позже). Гейт `FieldExtractor.ChestDetectionEnabled=false` (все chest-ROI пропускаются → `Chests` пуст); в виджете строки «Сундуки» и «Сундуки/ч» скрыты (`Visibility=Collapsed`). Детекторы (ChestZoneAnalyzer/ChestPanelAnalyzer/ChestDotCounter) и их тесты на фикстурах (chests.jpg 1/1/2, main.jpg 3/3) сохранены как база. Возврат — флаг `true` + раскрытие строк виджета + доработка multi-row (по-рядный счёт; нужна чистая фикстура 6+).
+  - Build 0/0; Core **262/262**, Capture **110/110**, Data **64/64**. → Artifacts: Chests/{IChestDotCounter,ChestDotCounter,ChestDotCountResult,IChestPanelAnalyzer,ChestPanelReading,IChestZoneAnalyzer,ChestZoneAnalyzer}.cs, FieldExtractor.cs, Models/PanelColor.cs, ChestType.cs, GameMechanicsConfig.cs, Entities/ChestTypeConfiguration.cs, CalibrationViewModel.cs, Composition.cs, тесты ChestDotCounter/ChestPanelAnalyzer/ChestZoneAnalyzerFixturesTests.cs, DECISIONS.md ADR-021/022/023, ARCHITECTURE.md §3/§4/§7/§9/§11, GAME-FACTS.md §5/§6
 - [ ] **T063 — Визуальная детекция прогресса этапа (`stageProgress`).** Прогрессбар идёт справа налево; определять % пройденного пути по изображению. На его основе — **сигнал завершения этапа и расчёт времени этапа** (инфо-лента MainZone редко показывает «(Ns)», OCR-стратегия по `stageTime` ненадёжна). Питает сегментацию забегов (FR-007, ADR-012). [Story: US2]
 - [ ] **T064 — `stageId`: текущий этап по зелёному флагу карты Portal.** Текущий этап отмечен нодой с зелёным флагом, позиция меняется. Нужна визуальная локализация маркера во всей зоне Portal + OCR его метки («[2-1]»), вместо OCR всей карты. До реализации текущий этап выводится как `nextLocation − 1` (MainZone). [Story: US2]
 - [ ] **T065 — (опц.) Слот-зависимая детекция разделов по заголовкам вкладок (anti-contamination).** Сейчас (ADR-019) все поля читаются каждый кадр без gating; если в слоте открыт другой раздел (Stash/Rune вместо Status), область поля может дать чужое значение (снижается парсером/sanity). Усиление: добавить отдельные ROI на **название каждой вкладки** → определять, какие разделы сейчас открыты, и принимать поле только если в слоте нужный раздел. MainZone исключена — отображается всегда и не перекрывается, маркер ей не нужен. [Story: US1]
 - [ ] **T066 — Надёжность мелких полей OCR (heroLevel).** Очень мелкие зоны (heroLevel «26/27») распознаются нестабильно даже после апскейла `MinOcrDimension=96`. Рассмотреть доп. предобработку (бинаризация/контраст) или Tesseract-fallback per-ROI (ADR-005). [minor]
 - [ ] **T067 — Cleanup: убрать временный `[Diag]`-блок из `StatsOrchestrator`.** Диагностический OCR-лог (сырой текст activeTab/gold/xp/heroLevel + размеры кадра) добавлялся для отладки live-распознавания; удалить после стабилизации (вместе с инъекцией `IOcrReader` в оркестратор, если она больше не нужна). [tech-debt]
+- [ ] **T068 — Дизайн виджета в стиле игры + примагничивание к окну + адаптивная ширина.** Три связанных направления оформления виджета (`TBHStats.App`, FR-014…FR-016):
+  - **Визуальный стиль.** Оформить весь внешний вид виджета — палитра, шрифты, иконки, рамки, фон, отступы — в визуальном стиле UI игры Task Bar Hero (референс — `screenshots/`, `docs/project/GAME-FACTS.md` §12). Согласовать с темами Light/Dark (T053) и контрастом A11y; ресурсы стиля — через `{ThemeResource}`/словари ресурсов, без хардкод-цветов в разметке.
+  - **Примагничивание (snap/docking) к окну игры.** Виджет автоматически «прилипает» к краю окна TBH и следует за ним при перемещении/ресайзе. Использовать уже отслеживаемую геометрию окна из `IGameWindowTracker` (T012, move/resize) → пересчёт позиции `AppWindow`. Observe-only сохраняется (только чтение позиции окна игры, без инъекции ввода).
+  - **Адаптивная ширина.** Ширину виджета подгонять под ширину панели вкладок игры (Hero/Status/Portal), чтобы виджет визуально совпадал с шириной игрового интерфейса; ширина пересчитывается при ресайзе окна игры. [Story: US1/UI]

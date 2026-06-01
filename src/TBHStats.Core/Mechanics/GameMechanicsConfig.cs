@@ -62,9 +62,9 @@ public sealed class GameMechanicsConfig
         // ── ChestTypes ────────────────────────────────────────────────────────
         ChestType[] chestTypes =
         [
-            new ChestType { Id = 1, Key = "brown",     DisplayName = "Базовый",      ColorLabel = "коричневый", SortOrder = 1, IsActive = true },
-            new ChestType { Id = 2, Key = "blue",      DisplayName = "Редкий",       ColorLabel = "синий",      SortOrder = 2, IsActive = true },
-            new ChestType { Id = 3, Key = "red",       DisplayName = "Легендарный",  ColorLabel = "красный",    SortOrder = 3, IsActive = true },
+            new ChestType { Id = 1, Key = "brown", DisplayName = "Базовый",     ColorLabel = "коричневый", SortOrder = 1, IsActive = true, PanelColor = new PanelColor(255, 255, 255) },
+            new ChestType { Id = 2, Key = "blue",  DisplayName = "Редкий",      ColorLabel = "синий",      SortOrder = 2, IsActive = true, PanelColor = new PanelColor(190, 220, 238) },
+            new ChestType { Id = 3, Key = "red",   DisplayName = "Легендарный", ColorLabel = "красный",    SortOrder = 3, IsActive = true, PanelColor = new PanelColor(236, 133,  41) },
         ];
 
         // ── Tabs (9 разделов) ─────────────────────────────────────────────────
@@ -127,6 +127,10 @@ public sealed class GameMechanicsConfig
             new FieldSourceBinding("chest:brown",   FieldSource.MainZone, TabId: null),
             new FieldSourceBinding("chest:blue",    FieldSource.MainZone, TabId: null),
             new FieldSourceBinding("chest:red",     FieldSource.MainZone, TabId: null),
+
+            // Зонный детектор сундуков (ADR-023): одна ROI охватывает всю группу плашек.
+            // Приоритетный источник chest-данных; per-ROI «chest:*@N»-биндинги сохранены как legacy.
+            new FieldSourceBinding("chestZone",     FieldSource.MainZone, TabId: null),
 
             new FieldSourceBinding("nextLocation",  FieldSource.MainZone, TabId: null),
             new FieldSourceBinding("activeTab",     FieldSource.MainZone, TabId: null),

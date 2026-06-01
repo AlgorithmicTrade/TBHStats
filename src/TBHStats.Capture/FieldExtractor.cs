@@ -1,3 +1,4 @@
+using TBHStats.Capture.Chests;
 using TBHStats.Capture.Ocr;
 using TBHStats.Core.Mechanics;
 using TBHStats.Core.Models;
@@ -14,27 +15,53 @@ namespace TBHStats.Capture;
 /// Ошибки парсинга не выбрасываются — поле остаётся null.
 /// Визуальные поля (<c>stageProgress</c>, <c>bossPresent</c>) в v1 оставляются null:
 /// они требуют анализа изображения, а не OCR, и будут обработаны T035 StageCompletionDetector.
+///
+/// Chest-поля (ADR-023): основной путь — зонный анализатор <see cref="IChestZoneAnalyzer"/>
+/// (FieldKey «chestZone»): одна ROI охватывает всю группу плашек, тип определяется по
+/// цвету фона, счёт точек масштабонезависим. Если «chestZone»-ROI нет — fallback на
+/// per-ROI путь через <see cref="IChestPanelAnalyzer"/> (ADR-022, legacy).
 /// </remarks>
 public sealed class FieldExtractor : IFieldExtractor
 {
     private readonly IOcrReader _ocr;
     private readonly IValueParser _parser;
-    private readonly IChestLayoutResolver _chestLayoutResolver;
+    private readonly IChestPanelAnalyzer _chestPanelAnalyzer;
+    private readonly IChestZoneAnalyzer _chestZoneAnalyzer;
+
+    /// <summary>
+    /// Признак включённости обнаружения сундуков (chest:*/chestZone).
+    /// </summary>
+    /// <remarks>
+    /// ВРЕМЕННО ОТКЛЮЧЕНО (T062 backlog): визуальный счёт точек требует доработки
+    /// (многорядность 6+, плотные ряды, живой масштаб). Детекторы
+    /// <see cref="IChestZoneAnalyzer"/>/<see cref="IChestPanelAnalyzer"/> (ADR-021…023) сохранены,
+    /// но не вызываются: все chest-ROI пропускаются, <c>Chests</c> остаётся пустым →
+    /// виджет показывает «—» вместо неверных значений.
+    /// Чтобы снова включить — выставить <c>true</c>.
+    /// </remarks>
+    private static readonly bool ChestDetectionEnabled = false;
 
     /// <summary>
     /// Создаёт экземпляр <see cref="FieldExtractor"/>.
     /// </summary>
     /// <param name="ocr">OCR-ридер для считывания ROI-областей.</param>
     /// <param name="parser">Парсер игровых значений (числа, время, идентификаторы этапов).</param>
-    /// <param name="chestLayoutResolver">Резолвер активной раскладки @N-сундуков.</param>
-    public FieldExtractor(IOcrReader ocr, IValueParser parser, IChestLayoutResolver chestLayoutResolver)
+    /// <param name="chestPanelAnalyzer">Визуальный анализатор плашки сундука: тип по цвету + счёт точек (ADR-022, legacy per-ROI путь).</param>
+    /// <param name="chestZoneAnalyzer">Зонный анализатор группы плашек: локализация по цвету + счёт по рядам (ADR-023, приоритетный путь).</param>
+    public FieldExtractor(
+        IOcrReader ocr,
+        IValueParser parser,
+        IChestPanelAnalyzer chestPanelAnalyzer,
+        IChestZoneAnalyzer chestZoneAnalyzer)
     {
         ArgumentNullException.ThrowIfNull(ocr);
         ArgumentNullException.ThrowIfNull(parser);
-        ArgumentNullException.ThrowIfNull(chestLayoutResolver);
+        ArgumentNullException.ThrowIfNull(chestPanelAnalyzer);
+        ArgumentNullException.ThrowIfNull(chestZoneAnalyzer);
         _ocr = ocr;
         _parser = parser;
-        _chestLayoutResolver = chestLayoutResolver;
+        _chestPanelAnalyzer = chestPanelAnalyzer;
+        _chestZoneAnalyzer = chestZoneAnalyzer;
     }
 
     /// <inheritdoc/>
@@ -62,9 +89,10 @@ public sealed class FieldExtractor : IFieldExtractor
         string? stageText = null;
         StageRef? nextLocation = null;
 
-        Dictionary<int, int> chests = [];
-        List<ChestLayoutReading> chestReadings = [];
+        Dictionary<int, int>     chests         = [];
+        Dictionary<int, double>  chestBestMatch = []; // typeId → лучший PanelMatch (legacy per-ROI)
         Dictionary<string, double> perFieldConfidence = [];
+        bool chestZoneRead = false; // флаг: зонный анализатор уже отработал (ADR-023)
 
         foreach (RoiCalibration roi in rois)
         {
@@ -78,6 +106,65 @@ public sealed class FieldExtractor : IFieldExtractor
             if (roi.FieldKey is "stageProgress" or "bossPresent")
                 continue;
 
+            string fieldKey = roi.FieldKey;
+
+            // Обнаружение сундуков ВРЕМЕННО ОТКЛЮЧЕНО (T062 backlog, см. ChestDetectionEnabled).
+            // Все chest-ROI (chestZone и chest:*) пропускаются → Chests пустой, виджет показывает «—».
+            if (fieldKey == "chestZone" || ChestFieldKey.TryParse(fieldKey, out _, out _))
+            {
+                if (!ChestDetectionEnabled)
+                    continue;
+            }
+
+            // Зонный детектор сундуков (ADR-023): одна ROI «chestZone» охватывает всю группу плашек.
+            // Приоритетный источник: локализация по цвету + масштабонезависимый счёт по рядам.
+            if (fieldKey == "chestZone")
+            {
+                IReadOnlyDictionary<int, int> zoneResult = await _chestZoneAnalyzer
+                    .AnalyzeZoneAsync(frame, roi, cfg, ct)
+                    .ConfigureAwait(false);
+
+                foreach ((int typeId, int dotCount) in zoneResult)
+                {
+                    chests[typeId] = dotCount;
+                    perFieldConfidence[$"chest:{typeId}"] = 1.0;
+                }
+
+                perFieldConfidence["chestZone"] = 1.0;
+                chestZoneRead = true;
+                continue;
+            }
+
+            // Chest-поля: точки ГРАФИЧЕСКИЕ (не текст) → тип определяется по цвету плашки (ADR-022).
+            // Используются как fallback, если «chestZone»-ROI не откалибрована (chestZoneRead == false).
+            // Если зонный анализатор уже отработал — per-ROI путь пропускается (не перезаписывает зонные данные).
+            if (ChestFieldKey.TryParse(fieldKey, out _, out _))
+            {
+                if (chestZoneRead)
+                    continue; // зонный путь приоритетен
+
+                ChestPanelReading reading = await _chestPanelAnalyzer
+                    .AnalyzeChestPanelAsync(frame, roi, cfg, ct)
+                    .ConfigureAwait(false);
+
+                if (reading.ChestTypeId is null)
+                    continue; // плашка не распознана — пропускаем
+
+                int typeId = reading.ChestTypeId.Value;
+
+                // Мёрдж: несколько ROI могут покрывать одну плашку.
+                // Берём чтение с наибольшим PanelMatch (наиболее уверенное).
+                if (!chestBestMatch.TryGetValue(typeId, out double prevMatch)
+                    || reading.PanelMatch > prevMatch)
+                {
+                    chests[typeId]         = reading.DotCount;
+                    chestBestMatch[typeId] = reading.PanelMatch;
+                    perFieldConfidence[$"chest:{typeId}"] = reading.PanelMatch;
+                }
+
+                continue;
+            }
+
             // Игра показывает несколько разделов ОДНОВРЕМЕННО (Hero/Status/Portal видны рядом),
             // поэтому модель «одна активная вкладка» неприменима: читаем ВСЕ калиброванные поля
             // с их фиксированных позиций каждый кадр (ADR-019). Валидация значения — парсером
@@ -89,8 +176,6 @@ public sealed class FieldExtractor : IFieldExtractor
 
             if (!res.Recognized)
                 continue;
-
-            string fieldKey = roi.FieldKey;
 
             // Маппинг FieldKey → поле RawObservation
             if (fieldKey == "gold")
@@ -183,28 +268,6 @@ public sealed class FieldExtractor : IFieldExtractor
                     perFieldConfidence[fieldKey] = res.Confidence;
                 }
             }
-            else if (ChestFieldKey.TryParse(fieldKey, out string chestKey, out int? slotCount))
-            {
-                ChestType? chestType = cfg.ChestTypes.FirstOrDefault(c => c.Key == chestKey);
-                if (chestType is null)
-                    continue;
-
-                if (_parser.TryParseAbbreviatedNumber(res.RawText, out long val) && val >= 0)
-                {
-                    if (slotCount is null)
-                    {
-                        // Базовый ключ «chest:brown» — обратная совместимость: одна фиксированная позиция.
-                        chests[chestType.Id] = (int)val;
-                        perFieldConfidence[fieldKey] = res.Confidence;
-                    }
-                    else
-                    {
-                        // Калиброванный ключ «chest:brown@N» — накапливаем для резолвера.
-                        chestReadings.Add(new ChestLayoutReading(chestType.Id, slotCount.Value, (int)val));
-                        perFieldConfidence[fieldKey] = res.Confidence;
-                    }
-                }
-            }
             // Прочие неизвестные FieldKey тихо пропускаются (FR-005)
         }
 
@@ -215,14 +278,6 @@ public sealed class FieldExtractor : IFieldExtractor
             xpToLevel = xpToLevelFromPair;
             perFieldConfidence["xp"] = xpPairConfidence!.Value;
             perFieldConfidence["xpToLevel"] = xpPairConfidence.Value;
-        }
-
-        // Разрешаем @N-раскладку и вливаем результат (имеет приоритет над базовыми ключами).
-        if (chestReadings.Count > 0)
-        {
-            ChestLayoutResolution resolution = _chestLayoutResolver.Resolve(chestReadings);
-            foreach (KeyValuePair<int, int> kv in resolution.Counts)
-                chests[kv.Key] = kv.Value;
         }
 
         return new RawObservation

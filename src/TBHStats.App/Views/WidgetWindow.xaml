@@ -135,8 +135,8 @@
                     VerticalAlignment="Center" />
             </Grid>
 
-            <!-- Сундуки/час — тип сундука указывается текстом (Базовый/Редкий/Легендарный), не только цветом (A11y §XI) -->
-            <Grid Grid.Row="2" AutomationProperties.Name="Сундуки в час по типам">
+            <!-- Сундуки/час — ВРЕМЕННО СКРЫТО (обнаружение сундуков отключено, T062 backlog; FieldExtractor.ChestDetectionEnabled) -->
+            <Grid Grid.Row="2" Visibility="Collapsed" AutomationProperties.Name="Сундуки в час по типам">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -226,8 +226,8 @@
                     ToolTipService.ToolTip="Оценка по текущему опыту, опыту до уровня и темпу опыт/ч" />
             </Grid>
 
-            <!-- Текущие сундуки (OCR-контроль) -->
-            <Grid Grid.Row="6" AutomationProperties.Name="Текущие сундуки по типам">
+            <!-- Текущие сундуки — ВРЕМЕННО СКРЫТО (обнаружение сундуков отключено, T062 backlog; FieldExtractor.ChestDetectionEnabled) -->
+            <Grid Grid.Row="6" Visibility="Collapsed" AutomationProperties.Name="Текущие сундуки по типам">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />

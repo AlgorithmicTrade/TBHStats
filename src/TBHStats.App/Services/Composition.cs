@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TBHStats.App.ViewModels;
 using TBHStats.Capture;
+using TBHStats.Capture.Chests;
 using TBHStats.Capture.Ocr;
 using TBHStats.Capture.Roi;
 using TBHStats.Capture.Tabs;
@@ -68,10 +69,20 @@ public static class Composition
         // TabDetector зависит от IOcrReader и ITabNameMatcher
         services.AddSingleton<ITabDetector, TabDetector>();
 
-        // ChestLayoutResolver: stateless singleton
-        services.AddSingleton<IChestLayoutResolver, ChestLayoutResolver>();
+        // ChestDotCounter реализует IChestDotCounter (legacy) и IChestPanelAnalyzer (ADR-022).
+        // Singleton: не имеет статического изменяемого состояния кроме кэша буфера кадра
+        // (кэш per-экземпляр, thread-safe через lock).
+        services.AddSingleton<ChestDotCounter>();
+        services.AddSingleton<IChestDotCounter>(sp => sp.GetRequiredService<ChestDotCounter>());
+        services.AddSingleton<IChestPanelAnalyzer>(sp => sp.GetRequiredService<ChestDotCounter>());
 
-        // FieldExtractor зависит от IOcrReader, IValueParser и IChestLayoutResolver
+        // ChestZoneAnalyzer: зонная локализация плашек по цвету + масштабонезависимый счёт по рядам (ADR-023).
+        // Singleton: per-экземпляр кэш буфера кадра, thread-safe через lock.
+        services.AddSingleton<IChestZoneAnalyzer, ChestZoneAnalyzer>();
+
+        // FieldExtractor зависит от IOcrReader, IValueParser, IChestPanelAnalyzer (ADR-022 legacy fallback)
+        // и IChestZoneAnalyzer (ADR-023 приоритетный путь).
+        // IChestLayoutResolver больше не используется в пайплайне (сохранён в Core для возможных расширений).
         services.AddSingleton<IFieldExtractor, FieldExtractor>();
 
         // CaptureSession: создаётся как singleton; принимает IGameWindowTracker через DI.
@@ -118,7 +129,9 @@ public static class Composition
                 new ScopedSettingsRepositoryProxy(sp),
                 sp.GetRequiredService<IGameMechanics>(),
                 sp.GetRequiredService<ICaptureSession>(),
-                sp.GetRequiredService<IOcrReader>()));
+                sp.GetRequiredService<IOcrReader>(),
+                sp.GetRequiredService<IChestPanelAnalyzer>(),
+                sp.GetRequiredService<IChestZoneAnalyzer>()));
 
         // StatsOrchestrator: singleton, зависит от сингтонов Capture/Core и scoped Data.
         // Scoped ISettingsRepository доступен через IServiceScopeFactory внутри петли

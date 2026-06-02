@@ -53,10 +53,6 @@ public sealed partial class LiveStatsViewModel : ObservableObject
     [ObservableProperty]
     private string? _heroClass;
 
-    /// <summary>Урон героя (null до первого надёжного замера).</summary>
-    [ObservableProperty]
-    private long? _heroDamage;
-
     /// <summary>Уровень героя для отображения («42» или «—»).</summary>
     [ObservableProperty]
     private string _heroLevelText = "—";
@@ -65,9 +61,40 @@ public sealed partial class LiveStatsViewModel : ObservableObject
     [ObservableProperty]
     private string _heroClassText = "—";
 
-    /// <summary>Урон героя для отображения («1 234 567» или «—»).</summary>
+    // ──────────────────────────────────────────────────────────────
+    // Режим отображения (забег / сессия)
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// true — показываем блок «Сессия», false — блок «Забег».
+    /// Управляется только переключателем UI; ApplySnapshot НЕ перезаписывает.
+    /// </summary>
     [ObservableProperty]
-    private string _heroDamageText = "—";
+    private bool _isSessionView;
+
+    // ──────────────────────────────────────────────────────────────
+    // Статистика сессии
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>Суммарное золото за сессию для отображения («1 234 567» или «—»).</summary>
+    [ObservableProperty]
+    private string _sessionGoldText = "—";
+
+    /// <summary>Суммарный опыт за сессию для отображения («1 234 567» или «—»).</summary>
+    [ObservableProperty]
+    private string _sessionXpText = "—";
+
+    /// <summary>Пройдено этапов за сессию для отображения («0»).</summary>
+    [ObservableProperty]
+    private string _sessionStagesText = "0";
+
+    /// <summary>Получено уровней за сессию для отображения («0»).</summary>
+    [ObservableProperty]
+    private string _sessionLevelsText = "0";
+
+    /// <summary>Время работы виджета (аптайм сессии) для отображения («1h 02m 03s» или «0s»).</summary>
+    [ObservableProperty]
+    private string _sessionUptimeText = "—";
 
     // ──────────────────────────────────────────────────────────────
     // Текущие значения (OCR-контроль в реальном времени)
@@ -211,11 +238,9 @@ public sealed partial class LiveStatsViewModel : ObservableObject
         // Герой
         HeroLevel  = s.HeroLevel;
         HeroClass  = s.HeroClass;
-        HeroDamage = s.HeroDamage;
 
-        HeroLevelText  = s.HeroLevel  is int lvl  ? lvl.ToString()                 : "—";
-        HeroClassText  = s.HeroClass  is { Length: > 0 } cls ? cls               : "—";
-        HeroDamageText = s.HeroDamage is long dmg ? FormatLong(dmg)               : "—";
+        HeroLevelText = s.HeroLevel is int lvl                   ? lvl.ToString() : "—";
+        HeroClassText = s.HeroClass is { Length: > 0 } cls       ? cls            : "—";
 
         // Текущие значения (OCR-контроль)
         XpCurrentText     = BuildXpCurrentText(s.Xp, s.XpToLevel, s.LastCompletedStageXp);
@@ -251,6 +276,13 @@ public sealed partial class LiveStatsViewModel : ObservableObject
         LastUpdateText = s.LastReliableUtc is DateTime utc
             ? utc.ToLocalTime().ToString("HH:mm:ss")
             : "—";
+
+        // Статистика сессии (IsSessionView не перезаписывается — управляется только UI)
+        SessionGoldText   = FormatLong(s.SessionGoldGained);
+        SessionXpText     = FormatLong(s.SessionXpGained);
+        SessionStagesText = s.SessionStagesCompleted.ToString();
+        SessionLevelsText = s.SessionLevelsGained.ToString();
+        SessionUptimeText = FormatUptime(s.SessionElapsedSeconds);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -352,6 +384,25 @@ public sealed partial class LiveStatsViewModel : ObservableObject
             }));
 
         return result.Length > 0 ? result : "—";
+    }
+
+    /// <summary>
+    /// Форматирует аптайм сессии (не-nullable секунды) в строку «1h 02m 03s» / «2m 05s» / «12s».
+    /// При 0 возвращает «0s».
+    /// </summary>
+    private static string FormatUptime(int seconds)
+    {
+        if (seconds <= 0) return "0s";
+
+        int h   = seconds / 3600;
+        int m   = (seconds % 3600) / 60;
+        int sec = seconds % 60;
+
+        if (h > 0)
+            return $"{h}h {m:D2}m {sec:D2}s";
+        if (m > 0)
+            return $"{m}m {sec:D2}s";
+        return $"{sec}s";
     }
 
     /// <summary>

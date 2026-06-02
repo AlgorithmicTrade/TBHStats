@@ -135,6 +135,31 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     /// <summary>Прирост опыта за последний ПРОЙДЕННЫЙ сегмент (для снапшота).</summary>
     private long? _lastCompletedStageXp;
 
+    // ── Сессионные накопители ──────────────────────────────────────────────────
+
+    /// <summary>Момент UTC старта сессии (создание оркестратора = старт процесса).</summary>
+    private readonly DateTime _sessionStartUtc = DateTime.UtcNow;
+
+    /// <summary>Суммарный положительный прирост золота за сессию.</summary>
+    private long _sessionGoldGained;
+    /// <summary>Предыдущее значение золота для вычисления сессионной дельты (независимо от сегментов).</summary>
+    private long? _sessionPrevGold;
+
+    /// <summary>Суммарный прирост опыта за сессию (с компенсацией level-up).</summary>
+    private long _sessionXpGained;
+    /// <summary>Предыдущий XP в пределах уровня для сессионного накопителя.</summary>
+    private long? _sessionPrevXp;
+    /// <summary>Предыдущий XpToLevel для сессионного накопителя (level-up компенсация).</summary>
+    private long? _sessionPrevXpToLevel;
+    /// <summary>Предыдущий уровень героя для сессионного накопителя (детекция level-up и подсчёт).</summary>
+    private int? _sessionPrevHeroLevel;
+
+    /// <summary>Количество этапов, завершённых по боссу за сессию.</summary>
+    private int _sessionStagesCompleted;
+
+    /// <summary>Количество уровней героя, полученных за сессию.</summary>
+    private int _sessionLevelsGained;
+
     /// <summary>Порог падения прогресса (абсолютный), трактуемый как граница сегмента (новый/перезапущенный этап).</summary>
     private const double StageProgressDropThreshold = 0.10;
     /// <summary>Порог прогресса, при котором считаем, что был бой с боссом (1.0 vs макс. пути ≈0.95).</summary>
@@ -501,6 +526,9 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
 
             // Накапливаем данные текущего сегмента (T064)
             AccumulateSegment(sample, obs);
+
+            // Накапливаем сессионные счётчики (независимо от сегментных сбросов)
+            AccumulateSession(sample);
         }
 
         // ── Вычислить темпы + EMA-сглаживание ─────────────────────────────────
@@ -600,6 +628,7 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
 
                     _lastCompletedStageGold = goldGained;
                     _lastCompletedStageXp   = xpGained;
+                    _sessionStagesCompleted++;
 
                     // Запись забега только если этап был распознан из свежего nextLocation
                     if (_segmentStageId.HasValue && _runRecorder is not null)
@@ -687,7 +716,12 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
             LastCompletedStageXp:         _lastCompletedStageXp,
             LastReliableUtc:              lastReliableUtc,
             IsStale:                      isStale,
-            Chests:                       _lastKnownChests));
+            Chests:                       _lastKnownChests,
+            SessionGoldGained:            _sessionGoldGained,
+            SessionXpGained:              _sessionXpGained,
+            SessionStagesCompleted:       _sessionStagesCompleted,
+            SessionLevelsGained:          _sessionLevelsGained,
+            SessionElapsedSeconds:        GetSessionElapsedSeconds()));
     }
 
     // ── Вспомогательные методы ─────────────────────────────────────────────────
@@ -702,6 +736,7 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         LiveRates rates = new(_emaGoldPerHour ?? 0.0, _emaXpPerHour ?? 0.0, _lastChestPerHour);
 
         // Таймер этапа НЕ инкрементируется — отдаём последнее посчитанное значение.
+        // Сессионный таймер тикает даже в Waiting/NotFound — передаём текущее значение.
         PublishSnapshot(new LiveStatsSnapshot(
             State:                        state,
             Rates:                        rates,
@@ -720,7 +755,12 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
             LastCompletedStageXp:         _lastCompletedStageXp,
             LastReliableUtc:              _lastReliableSample?.TakenAtUtc,
             IsStale:                      true,
-            Chests:                       _lastKnownChests));
+            Chests:                       _lastKnownChests,
+            SessionGoldGained:            _sessionGoldGained,
+            SessionXpGained:              _sessionXpGained,
+            SessionStagesCompleted:       _sessionStagesCompleted,
+            SessionLevelsGained:          _sessionLevelsGained,
+            SessionElapsedSeconds:        GetSessionElapsedSeconds()));
     }
 
     /// <summary>
@@ -858,6 +898,76 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         _segmentPrevChestPoints.Clear();
         _segmentStageId           = null;
         _currentStageRecognized   = false;
+    }
+
+    /// <summary>
+    /// Возвращает количество секунд, прошедших с момента старта сессии.
+    /// </summary>
+    private int GetSessionElapsedSeconds()
+        => (int)Math.Max(0, (DateTime.UtcNow - _sessionStartUtc).TotalSeconds);
+
+    /// <summary>
+    /// Накапливает сессионные счётчики золота, опыта и уровней из надёжного кадра.
+    /// Не зависит от сегментных сбросов — вызывается параллельно с <see cref="AccumulateSegment"/>.
+    /// </summary>
+    private void AccumulateSession(MetricSample sample)
+    {
+        // ── Золото: суммируем только положительные дельты (траты игнорируются) ──
+        if (sample.Gold.HasValue)
+        {
+            long gold = sample.Gold.Value;
+            if (_sessionPrevGold.HasValue)
+            {
+                long delta = gold - _sessionPrevGold.Value;
+                if (delta > 0)
+                    _sessionGoldGained += delta;
+            }
+            _sessionPrevGold = gold;
+        }
+
+        // ── XP с компенсацией level-up (идентична сегментной логике) ──────────
+        if (sample.Xp.HasValue)
+        {
+            long curXp    = sample.Xp.Value;
+            int  curLevel = sample.HeroLevel ?? _sessionPrevHeroLevel ?? 1;
+
+            if (_sessionPrevXp.HasValue)
+            {
+                bool leveledUp = _sessionPrevHeroLevel.HasValue && curLevel > _sessionPrevHeroLevel.Value;
+                long xpDelta;
+
+                if (leveledUp && _sessionPrevXpToLevel.HasValue)
+                {
+                    long doborToLevelEnd = Math.Max(0L, _sessionPrevXpToLevel.Value - _sessionPrevXp.Value);
+                    xpDelta = doborToLevelEnd + Math.Max(0L, curXp);
+                }
+                else
+                {
+                    xpDelta = Math.Max(0L, curXp - _sessionPrevXp.Value);
+                }
+
+                _sessionXpGained += xpDelta;
+            }
+
+            // ── Level-up детекция: считаем разницу уровней ──────────────────────
+            if (sample.HeroLevel.HasValue && _sessionPrevHeroLevel.HasValue
+                && sample.HeroLevel.Value > _sessionPrevHeroLevel.Value)
+            {
+                _sessionLevelsGained += sample.HeroLevel.Value - _sessionPrevHeroLevel.Value;
+            }
+
+            _sessionPrevXp        = curXp;
+            _sessionPrevXpToLevel = sample.XpToLevel;
+            _sessionPrevHeroLevel = curLevel;
+        }
+        else if (sample.HeroLevel.HasValue)
+        {
+            // XP не считался, но уровень есть — обновляем prev-уровень для корректной
+            // компенсации level-up при следующем кадре с XP.
+            if (_sessionPrevHeroLevel.HasValue && sample.HeroLevel.Value > _sessionPrevHeroLevel.Value)
+                _sessionLevelsGained += sample.HeroLevel.Value - _sessionPrevHeroLevel.Value;
+            _sessionPrevHeroLevel = sample.HeroLevel.Value;
+        }
     }
 
     /// <summary>

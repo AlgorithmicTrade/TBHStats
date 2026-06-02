@@ -23,8 +23,9 @@
         </Grid.KeyboardAccelerators>
 
         <Grid.Resources>
-            <conv:BoolNegationConverter     x:Key="BoolNegationConverter" />
-            <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+            <conv:BoolNegationConverter           x:Key="BoolNegationConverter" />
+            <conv:BoolToVisibilityConverter        x:Key="BoolToVisibilityConverter" />
+            <conv:BoolToInverseVisibilityConverter x:Key="BoolToInverseVisibilityConverter" />
         </Grid.Resources>
 
         <Grid.RowDefinitions>
@@ -134,7 +135,45 @@
             Padding="6,4"
             Margin="0,0,0,4">
 
-            <Grid RowSpacing="2">
+            <StackPanel Spacing="0">
+
+            <!-- Строка переключателя/настроек: «Забег ⇄ Сессия» слева, «Поверх окон» справа -->
+            <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Переключатель «Забег / Сессия» (у левого края окна) -->
+                <CheckBox
+                    x:Name="SessionViewCheckBox"
+                    Grid.Column="0"
+                    AutomationProperties.Name="Toggle session view"
+                    AutomationProperties.AutomationId="SessionViewCheckBox"
+                    Content="Session"
+                    Style="{StaticResource GameCheckBoxStyle}"
+                    IsChecked="{Binding IsSessionView, Mode=TwoWay}"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    ToolTipService.ToolTip="Switch between Run and Session statistics" />
+
+                <!-- Checkbox "On top" (FR-015) — перемещён сюда, на место бывшего Session (справа) -->
+                <CheckBox
+                    x:Name="AlwaysOnTopCheckBox"
+                    Grid.Column="2"
+                    AutomationProperties.Name="Always on top"
+                    AutomationProperties.AutomationId="AlwaysOnTopCheckBox"
+                    Content="On top"
+                    Style="{StaticResource GameCheckBoxStyle}"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Click="OnAlwaysOnTopClicked" />
+            </Grid>
+
+            <!-- Блок «Забег» (виден когда IsSessionView == false) -->
+            <Grid RowSpacing="2"
+                  Visibility="{Binding IsSessionView, Converter={StaticResource BoolToInverseVisibilityConverter}}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -350,9 +389,6 @@
                             TextFontWeight="SemiBold"
                             TextAlignment="Right"
                             VerticalAlignment="Center" />
-                        <TextBlock
-                            Text="{Binding HeroDamageText}"
-                            Style="{StaticResource GameCaptionTextStyle}" />
                     </StackPanel>
                 </Grid>
 
@@ -479,32 +515,155 @@
                         ToolTipService.ToolTip="Time of last successful read" />
                 </StackPanel>
             </Grid>
+
+            <!-- Блок «Сессия» (виден когда IsSessionView == true) -->
+            <Grid RowSpacing="2"
+                  Visibility="{Binding IsSessionView, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Session gold -->
+                <Grid Grid.Row="0" AutomationProperties.Name="Session gold gained">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Session gold"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        Grid.Column="1"
+                        AutomationProperties.Name="Session gold gained"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding SessionGoldText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center" />
+                </Grid>
+
+                <!-- Session exp -->
+                <Grid Grid.Row="1" AutomationProperties.Name="Session exp gained">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Session exp"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        Grid.Column="1"
+                        AutomationProperties.Name="Session exp gained"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding SessionXpText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center" />
+                </Grid>
+
+                <!-- Stages completed -->
+                <Grid Grid.Row="2" AutomationProperties.Name="Stages completed this session">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Stages"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        Grid.Column="1"
+                        AutomationProperties.Name="Stages completed this session"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding SessionStagesText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center" />
+                </Grid>
+
+                <!-- Levels gained -->
+                <Grid Grid.Row="3" AutomationProperties.Name="Levels gained this session">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Levels"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        Grid.Column="1"
+                        AutomationProperties.Name="Levels gained this session"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding SessionLevelsText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center" />
+                </Grid>
+
+                <!-- Uptime -->
+                <Grid Grid.Row="4" AutomationProperties.Name="Session uptime">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Uptime"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        Grid.Column="1"
+                        AutomationProperties.Name="Session uptime"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding SessionUptimeText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center" />
+                </Grid>
+
+            </Grid>
+
+            </StackPanel>
         </Border>
 
-        <!-- ── Строка 3: Чекбокс + кнопки ─────────────────────────────────── -->
+        <!-- ── Строка 3: кнопки (у левого края, на месте бывшего «On top») ─── -->
         <Grid Grid.Row="3">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
 
-            <!-- Checkbox "On top" (FR-015) -->
-            <CheckBox
-                x:Name="AlwaysOnTopCheckBox"
-                Grid.Column="0"
-                AutomationProperties.Name="Always on top"
-                AutomationProperties.AutomationId="AlwaysOnTopCheckBox"
-                Content="On top"
-                Style="{StaticResource GameCheckBoxStyle}"
-                VerticalAlignment="Center"
-                Click="OnAlwaysOnTopClicked" />
-
-            <!-- Кнопки справа -->
+            <!-- Кнопки слева -->
             <StackPanel
-                Grid.Column="2"
                 Orientation="Horizontal"
-                HorizontalAlignment="Right"
+                HorizontalAlignment="Left"
                 Spacing="6">
 
                 <!-- Button to move game window off-screen -->

@@ -56,6 +56,25 @@ namespace TBHStats.App.Services;
 /// Прирост опыта за последний ПРОЙДЕННЫЙ (по боссу) сегмент этапа.
 /// Null до первого прохождения.
 /// </param>
+/// <param name="SessionGoldGained">
+/// Суммарный положительный прирост золота за сессию (с момента запуска виджета).
+/// Учитываются только положительные дельты между надёжными кадрами; траты (отрицательные дельты) игнорируются.
+/// </param>
+/// <param name="SessionXpGained">
+/// Суммарный прирост опыта за сессию с компенсацией level-up.
+/// Формула идентична сегментной: при повышении уровня учитывается добор до конца предыдущего уровня.
+/// </param>
+/// <param name="SessionStagesCompleted">
+/// Количество этапов, завершённых по боссу за сессию.
+/// Инкрементируется только при наблюдаемом прохождении (бос + начало этапа видено).
+/// </param>
+/// <param name="SessionLevelsGained">
+/// Количество уровней героя, полученных за сессию.
+/// </param>
+/// <param name="SessionElapsedSeconds">
+/// Время работы в секундах с момента старта оркестратора (старт сессии).
+/// Тикает непрерывно, включая периоды Waiting/NotFound.
+/// </param>
 public sealed record LiveStatsSnapshot(
     CaptureState State,
     LiveRates Rates,
@@ -74,7 +93,12 @@ public sealed record LiveStatsSnapshot(
     long? LastCompletedStageXp,
     DateTime? LastReliableUtc,
     bool IsStale,
-    IReadOnlyDictionary<int, int> Chests)
+    IReadOnlyDictionary<int, int> Chests,
+    long SessionGoldGained,
+    long SessionXpGained,
+    int SessionStagesCompleted,
+    int SessionLevelsGained,
+    int SessionElapsedSeconds)
 {
     /// <summary>
     /// Начальный снимок: <see cref="CaptureState.NotFound"/>, нет данных, IsStale=true.
@@ -98,5 +122,10 @@ public sealed record LiveStatsSnapshot(
         LastCompletedStageXp:         null,
         LastReliableUtc:              null,
         IsStale:                      true,
-        Chests:                       new Dictionary<int, int>());
+        Chests:                       new Dictionary<int, int>(),
+        SessionGoldGained:            0,
+        SessionXpGained:              0,
+        SessionStagesCompleted:       0,
+        SessionLevelsGained:          0,
+        SessionElapsedSeconds:        0);
 }

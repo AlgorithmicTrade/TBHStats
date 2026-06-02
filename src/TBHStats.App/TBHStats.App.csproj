@@ -21,6 +21,8 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- LibraryImportAttribute (P/Invoke source generator) требует unsafe-блоков -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!--
       WindowsPackageType управляет режимом поставки:
         MSIX  — packaged-сборка; Package.appxmanifest активен; WinRT-идентичность гарантирована.
@@ -63,6 +65,20 @@
     <Content Include="Assets\StoreLogo.png" />
     <Content Include="Assets\AppIcon.ico" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+    <!--
+      Шрифт Baloo 2 (SIL OFL) — игровой скин виджета (T068 Phase 4b):
+        Baloo2-Regular    — базовый вес 400, семейство "Baloo 2".
+        Baloo2-SemiBold   — вес 600, семейство "Baloo 2 SemiBold".
+        Baloo2-Bold       — вес 700, семейство "Baloo 2".
+        Baloo2-ExtraBold  — вес 800, семейство "Baloo 2 ExtraBold".
+      Источник: fontsource CDN (https://fontsource.org/fonts/baloo-2). SIL OFL-1.1.
+      OFL.txt — лицензия SIL OFL Baloo 2 (Copyright 2019 The Baloo 2 Project Authors).
+    -->
+    <Content Include="Assets\Fonts\Baloo2-Regular.ttf" />
+    <Content Include="Assets\Fonts\Baloo2-SemiBold.ttf" />
+    <Content Include="Assets\Fonts\Baloo2-Bold.ttf" />
+    <Content Include="Assets\Fonts\Baloo2-ExtraBold.ttf" />
+    <Content Include="Assets\Fonts\OFL.txt" />
   </ItemGroup>
 
   <ItemGroup>

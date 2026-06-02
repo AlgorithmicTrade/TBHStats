@@ -1,8 +1,10 @@
 namespace TBHStats.Data;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TBHStats.Core.Mechanics;
 using TBHStats.Core.Models;
+using TBHStats.Data.Repositories;
 
 /// <summary>
 /// Bootstrap-сервис для инициализации базы данных TBHStats при старте приложения.
@@ -86,6 +88,68 @@ public static class DatabaseInitializer
         //    (БД создана до фикса; координаты пользователя сохраняем — меняем только хинт.)
         //    Выполняется при каждом запуске — идемпотентно. НЕ перезаписывает явно заданный хинт.
         await HealNextLocationParseHintAsync(db, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Идемпотентный бэкфилл устаревших агрегатов: пересчитывает <see cref="StageAggregate"/>
+    /// для этапов, у которых есть забеги с <c>GoldGained &gt; 0</c> или <c>XpGained &gt; 0</c>,
+    /// но агрегат имеет <c>AvgGoldGained == 0 &amp;&amp; AvgXpGained == 0</c> (пост-миграционное состояние).
+    /// </summary>
+    /// <remarks>
+    /// Вызывается из composition root (<c>App.xaml.cs</c>) после <see cref="InitializeAsync"/>,
+    /// используя тот же DI-scope (доступ к <see cref="IStageAggregateRepository"/>
+    /// и <see cref="OptimizationProfile"/>).
+    /// Условие самоотключается после первого успешного пересчёта (поля станут &gt; 0).
+    /// </remarks>
+    /// <param name="db">Контекст EF Core.</param>
+    /// <param name="aggregateRepo">Репозиторий агрегатов (для вызова RecomputeForStageAsync).</param>
+    /// <param name="recentWindowSize">
+    /// Размер свежего окна; передаётся из <see cref="OptimizationProfile.RecentWindowSize"/>.
+    /// </param>
+    /// <param name="logger">Логгер для сводной info-строки. Может быть <c>null</c>.</param>
+    /// <param name="ct">Токен отмены.</param>
+    public static async Task BackfillStaleAggregatesAsync(
+        TbhStatsDbContext           db,
+        IStageAggregateRepository   aggregateRepo,
+        int                         recentWindowSize,
+        ILogger?                    logger,
+        CancellationToken           ct = default)
+    {
+        // Находим stageId, где есть хотя бы один run с gained>0, но агрегат не пересчитан.
+        // Критерий «устаревший»: AvgGoldGained==0 && AvgXpGained==0 при наличии реальных данных.
+        var stageIdsWithRuns = await db.StageRuns
+            .Where(r => !r.IsPartial && (r.GoldGained > 0 || r.XpGained > 0))
+            .Select(r => r.StageId)
+            .Distinct()
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        if (stageIdsWithRuns.Count == 0)
+        {
+            return;
+        }
+
+        var staleStageIds = await db.StageAggregates
+            .Where(a => stageIdsWithRuns.Contains(a.StageId)
+                        && a.AvgGoldGained == 0.0
+                        && a.AvgXpGained == 0.0)
+            .Select(a => a.StageId)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        if (staleStageIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (int stageId in staleStageIds)
+        {
+            await aggregateRepo
+                .RecomputeForStageAsync(stageId, recentWindowSize, ct)
+                .ConfigureAwait(false);
+        }
+
+        logger?.LogInformation("Backfill: пересчитано {Count} устаревших агрегатов.", staleStageIds.Count);
     }
 
     // ── Сидинг справочников и этапов ─────────────────────────────────────────

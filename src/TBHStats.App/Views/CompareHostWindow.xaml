@@ -5,9 +5,70 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    Title="TBHStats — Сравнение этапов"
+    xmlns:ctrl="using:TBHStats_App.Views.Controls"
+    Title="TBHStats — Stage Comparison"
     mc:Ignorable="d">
 
-    <Frame x:Name="CompareFrame" />
+    <Grid
+        x:Name="RootGrid"
+        Background="{StaticResource GameBackgroundBrush}">
 
+        <Grid.RowDefinitions>
+            <!-- Row 0: header bar (drag area + title + ✕) -->
+            <RowDefinition Height="Auto" />
+            <!-- Row 1: page content (CompareView) -->
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ── Row 0: Header bar ─────────────────────────────────────────────── -->
+        <Border
+            x:Name="HeaderBorder"
+            Grid.Row="0"
+            Style="{StaticResource GameHeaderBorderStyle}"
+            Margin="0,0,0,0"
+            HorizontalAlignment="Stretch"
+            PointerPressed="OnHeaderPointerPressed">
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="22" />
+                    <!-- spacer equal to close button width, to centre title -->
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Title "STAGE COMPARISON" -->
+                <ctrl:OutlinedTextBlock
+                    Grid.Column="1"
+                    Text="STAGE COMPARISON"
+                    Fill="{StaticResource GameHeaderForegroundBrush}"
+                    Stroke="{StaticResource GameTextStrokeBrush}"
+                    OutlineThickness="1.5"
+                    TextFontFamily="{StaticResource GameHeaderFont}"
+                    TextFontSize="18"
+                    TextFontWeight="Bold"
+                    TextAlignment="Center"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Center" />
+
+                <!-- Close button ✕ -->
+                <Button
+                    Grid.Column="2"
+                    x:Name="CloseButton"
+                    AutomationProperties.Name="Close window"
+                    AutomationProperties.AutomationId="CloseCompareButton"
+                    Content="✕"
+                    Style="{StaticResource GameCloseButtonStyle}"
+                    VerticalAlignment="Center"
+                    Click="OnCloseClicked"
+                    ToolTipService.ToolTip="Close" />
+            </Grid>
+        </Border>
+
+        <!-- ── Row 1: CompareView page ─────────────────────────────────────── -->
+        <Frame
+            x:Name="CompareFrame"
+            Grid.Row="1" />
+
+    </Grid>
 </Window>

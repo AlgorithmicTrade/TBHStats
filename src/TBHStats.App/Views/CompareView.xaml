@@ -6,7 +6,8 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:conv="using:TBHStats_App.Views.Converters"
-    mc:Ignorable="d">
+    mc:Ignorable="d"
+    Background="{StaticResource GameBackgroundBrush}">
 
     <Page.Resources>
         <conv:BoolNegationConverter     x:Key="BoolNegationConverter" />
@@ -15,99 +16,101 @@
 
     <Grid RowSpacing="8" Padding="12">
         <Grid.RowDefinitions>
-            <!-- Строка 0: заголовок -->
+            <!-- Row 0: optimization goal selector -->
             <RowDefinition Height="Auto" />
-            <!-- Строка 1: панель управления (метрика + scope) -->
+            <!-- Row 1: recommendation status bar -->
             <RowDefinition Height="Auto" />
-            <!-- Строка 2: строка статуса рекомендации -->
+            <!-- Row 2: divider -->
             <RowDefinition Height="Auto" />
-            <!-- Строка 3: разделитель -->
-            <RowDefinition Height="Auto" />
-            <!-- Строка 4: таблица / пустое состояние -->
+            <!-- Row 3: table / empty state -->
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- ── Строка 0: Заголовок ──────────────────────────────────────────── -->
-        <TextBlock
-            Grid.Row="0"
-            Text="Сравнение этапов"
-            Style="{StaticResource TitleTextBlockStyle}" />
-
-        <!-- ── Строка 1: Панель управления ─────────────────────────────────── -->
-        <Grid Grid.Row="1">
-
-            <!-- Цель оптимизации: Золото/час / Опыт/час -->
+        <!-- ── Row 0: Optimization goal panel ──────────────────────────────── -->
+        <Grid Grid.Row="0">
             <StackPanel Spacing="4">
                 <TextBlock
                     x:Name="MetricLabel"
-                    Text="Цель оптимизации"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    Text="Optimization goal"
+                    FontFamily="{StaticResource GameBodyFont}"
+                    FontSize="11"
+                    FontWeight="SemiBold"
+                    Foreground="{StaticResource GameSecondaryTextBrush}"
+                    VerticalAlignment="Center" />
                 <StackPanel
                     Orientation="Horizontal"
                     Spacing="8"
-                    AutomationProperties.Name="Цель оптимизации"
+                    AutomationProperties.Name="Optimization goal"
                     AutomationProperties.AutomationId="MetricGroup">
                     <RadioButton
                         x:Name="MetricGoldButton"
-                        AutomationProperties.Name="Оптимизация по золото в час"
+                        AutomationProperties.Name="Optimize by gold per hour"
                         AutomationProperties.AutomationId="MetricGoldButton"
-                        Content="Золото/час"
+                        Content="Gold/h"
                         GroupName="MetricGroup"
                         IsChecked="True"
                         IsTabStop="True"
                         TabIndex="0"
+                        Foreground="{StaticResource GameLabelBrush}"
+                        FontFamily="{StaticResource GameBodyFont}"
+                        FontSize="12"
                         Click="OnMetricGoldClicked" />
                     <RadioButton
                         x:Name="MetricXpButton"
-                        AutomationProperties.Name="Оптимизация по опыт в час"
+                        AutomationProperties.Name="Optimize by exp per hour"
                         AutomationProperties.AutomationId="MetricXpButton"
-                        Content="Опыт/час"
+                        Content="Exp/h"
                         GroupName="MetricGroup"
                         IsTabStop="True"
                         TabIndex="1"
+                        Foreground="{StaticResource GameLabelBrush}"
+                        FontFamily="{StaticResource GameBodyFont}"
+                        FontSize="12"
                         Click="OnMetricXpClicked" />
                 </StackPanel>
             </StackPanel>
         </Grid>
 
-        <!-- ── Строка 2: Строка статуса рекомендации (FR-017) ──────────────── -->
+        <!-- ── Row 1: Recommendation status bar (FR-017) ───────────────────── -->
         <Border
-            Grid.Row="2"
-            AutomationProperties.Name="Рекомендация оптимального этапа"
+            Grid.Row="1"
+            AutomationProperties.Name="Best stage recommendation"
             AutomationProperties.LiveSetting="Polite"
-            Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}"
-            CornerRadius="4"
+            Style="{StaticResource GamePanelBorderStyle}"
             Padding="10,6">
             <TextBlock
-                AutomationProperties.Name="Рекомендация"
+                AutomationProperties.Name="Recommendation"
                 Text="{Binding StatusText}"
-                Style="{StaticResource BodyTextBlockStyle}"
+                FontFamily="{StaticResource GameBodyFont}"
+                FontSize="12"
                 FontWeight="SemiBold"
+                Foreground="{StaticResource GameLabelBrush}"
                 TextWrapping="Wrap" />
         </Border>
 
-        <!-- ── Строка 3: Разделитель ────────────────────────────────────────── -->
+        <!-- ── Row 2: Divider ───────────────────────────────────────────────── -->
         <Border
-            Grid.Row="3"
+            Grid.Row="2"
             Height="1"
-            Background="{ThemeResource ControlFillColorSecondaryBrush}"
+            Background="{StaticResource GamePanelBorderBrush}"
             Margin="0,2" />
 
-        <!-- ── Строка 4: Таблица / Пустое состояние ────────────────────────── -->
-        <Grid Grid.Row="4">
+        <!-- ── Row 3: Table / Empty state ───────────────────────────────────── -->
+        <Grid Grid.Row="3">
 
-            <!-- Пустое состояние: только когда IsEmpty = true -->
+            <!-- Empty state: shown when IsEmpty = true -->
             <TextBlock
-                Text="Нет данных — сыграйте на этапах, чтобы накопить историю"
+                Text="No data — play stages to accumulate history"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 TextWrapping="Wrap"
                 TextAlignment="Center"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                FontFamily="{StaticResource GameBodyFont}"
+                FontSize="13"
+                Foreground="{StaticResource GameSecondaryTextBrush}"
                 Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}" />
 
-            <!-- Таблица этапов: скрыта при IsEmpty = true -->
+            <!-- Table: hidden when IsEmpty = true -->
             <Grid
                 Visibility="{Binding IsEmpty, Converter={StaticResource BoolNegationConverter}, ConverterParameter=Visibility}">
                 <Grid.RowDefinitions>
@@ -115,60 +118,56 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- Шапка таблицы. Правый отступ 18 = резерв 14 под полосу прокрутки ListView
-                     (Padding 0,0,14,0) + 4 на выравнивание с Padding ячеек строк. -->
-                <Grid
+                <!-- Table header. Right padding 18 = 14 for ListView scrollbar + 4 for cell alignment. -->
+                <Border
                     Grid.Row="0"
-                    Padding="4,4,18,6"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="30" />
-                        <ColumnDefinition Width="110" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="56" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="★"
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               HorizontalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="Этап"
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <TextBlock Grid.Column="2" Text="Золото"
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               HorizontalAlignment="Right"
-                               ToolTipService.ToolTip="Среднее золото за забег (по сохранённым забегам)" />
-                    <TextBlock Grid.Column="3" Text="Золото/ч"
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               HorizontalAlignment="Right" />
-                    <TextBlock Grid.Column="4" Text="Опыт"
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               HorizontalAlignment="Right"
-                               ToolTipService.ToolTip="Средний опыт за забег (по сохранённым забегам)" />
-                    <TextBlock Grid.Column="5" Text="Опыт/ч"
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               HorizontalAlignment="Right" />
-                    <TextBlock Grid.Column="6" Text="Забегов"
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               HorizontalAlignment="Right" />
-                </Grid>
+                    Style="{StaticResource GameHeaderBorderStyle}"
+                    Margin="0,0,0,2">
+                    <Grid Padding="4,0,18,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="30" />
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="56" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="★"
+                                   Style="{StaticResource GameTableHeaderTextStyle}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="Stage"
+                                   Style="{StaticResource GameTableHeaderTextStyle}" />
+                        <TextBlock Grid.Column="2" Text="Gold"
+                                   Style="{StaticResource GameTableHeaderTextStyle}"
+                                   HorizontalAlignment="Right"
+                                   ToolTipService.ToolTip="Average gold per run (over saved runs)" />
+                        <TextBlock Grid.Column="3" Text="Gold/h"
+                                   Style="{StaticResource GameTableHeaderTextStyle}"
+                                   HorizontalAlignment="Right" />
+                        <TextBlock Grid.Column="4" Text="Exp"
+                                   Style="{StaticResource GameTableHeaderTextStyle}"
+                                   HorizontalAlignment="Right"
+                                   ToolTipService.ToolTip="Average exp per run (over saved runs)" />
+                        <TextBlock Grid.Column="5" Text="Exp/h"
+                                   Style="{StaticResource GameTableHeaderTextStyle}"
+                                   HorizontalAlignment="Right" />
+                        <TextBlock Grid.Column="6" Text="Runs"
+                                   Style="{StaticResource GameTableHeaderTextStyle}"
+                                   HorizontalAlignment="Right" />
+                    </Grid>
+                </Border>
 
-                <!-- Строки этапов -->
+                <!-- Stage rows -->
                 <ListView
                     Grid.Row="1"
-                    AutomationProperties.Name="Таблица этапов с историей"
+                    AutomationProperties.Name="Stage history table"
                     AutomationProperties.AutomationId="StagesListView"
                     ItemsSource="{Binding Stages}"
                     SelectionMode="None"
                     IsItemClickEnabled="False"
-                    Padding="0,0,14,0">
+                    Padding="0,0,14,0"
+                    Background="Transparent">
 
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
@@ -190,62 +189,74 @@
                                     <ColumnDefinition Width="56" />
                                 </Grid.ColumnDefinitions>
 
-                                <!-- ★ / пусто + Rank — маркер рекомендации -->
+                                <!-- ★ / empty — recommendation marker -->
                                 <TextBlock
                                     Grid.Column="0"
                                     Text="★"
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
                                     FontWeight="Bold"
-                                    Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                                    Foreground="{StaticResource GameHeaderForegroundBrush}"
                                     Visibility="{Binding IsRecommended, Converter={StaticResource BoolToVisibilityConverter}}" />
 
-                                <!-- Этап: только номерная часть ("1-5"), сложность скрыта -->
+                                <!-- Stage number label only ("1-5"), difficulty hidden -->
                                 <TextBlock
                                     Grid.Column="1"
                                     Text="{Binding StageNumberLabel}"
                                     VerticalAlignment="Center"
-                                    Style="{StaticResource BodyTextBlockStyle}" />
+                                    FontFamily="{StaticResource GameBodyFont}"
+                                    FontSize="12"
+                                    Foreground="{StaticResource GameValueBrush}" />
 
-                                <!-- Золото (среднее за забег) -->
+                                <!-- Gold (avg per run) -->
                                 <TextBlock
                                     Grid.Column="2"
                                     Text="{Binding AvgGoldText}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
-                                    Style="{StaticResource BodyTextBlockStyle}" />
+                                    FontFamily="{StaticResource GameBodyFont}"
+                                    FontSize="12"
+                                    Foreground="{StaticResource GameValueBrush}" />
 
-                                <!-- Золото/ч -->
+                                <!-- Gold/h -->
                                 <TextBlock
                                     Grid.Column="3"
                                     Text="{Binding GoldPerHourText}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
-                                    Style="{StaticResource BodyTextBlockStyle}" />
+                                    FontFamily="{StaticResource GameBodyFont}"
+                                    FontSize="12"
+                                    Foreground="{StaticResource GameValueBrush}" />
 
-                                <!-- Опыт (среднее за забег) -->
+                                <!-- Exp (avg per run) -->
                                 <TextBlock
                                     Grid.Column="4"
                                     Text="{Binding AvgXpText}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
-                                    Style="{StaticResource BodyTextBlockStyle}" />
+                                    FontFamily="{StaticResource GameBodyFont}"
+                                    FontSize="12"
+                                    Foreground="{StaticResource GameValueBrush}" />
 
-                                <!-- Опыт/ч -->
+                                <!-- Exp/h -->
                                 <TextBlock
                                     Grid.Column="5"
                                     Text="{Binding XpPerHourText}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
-                                    Style="{StaticResource BodyTextBlockStyle}" />
+                                    FontFamily="{StaticResource GameBodyFont}"
+                                    FontSize="12"
+                                    Foreground="{StaticResource GameValueBrush}" />
 
-                                <!-- Забегов -->
+                                <!-- Runs -->
                                 <TextBlock
                                     Grid.Column="6"
                                     Text="{Binding RunCount}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
-                                    Style="{StaticResource BodyTextBlockStyle}" />
+                                    FontFamily="{StaticResource GameBodyFont}"
+                                    FontSize="12"
+                                    Foreground="{StaticResource GameValueBrush}" />
                             </Grid>
                         </DataTemplate>
                     </ListView.ItemTemplate>

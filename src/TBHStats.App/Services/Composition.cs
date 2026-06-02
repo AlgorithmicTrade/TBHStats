@@ -58,6 +58,10 @@ public static class Composition
         // GameWindowTracker: параметры по умолчанию (GameWindowTrackerOptions.Default)
         services.AddSingleton<IGameWindowTracker, GameWindowTracker>();
 
+        // GameWindowController: управление позицией окна игры (T068, ADR-026).
+        // Singleton: хранит сохранённую позицию окна между вызовами HideOffScreen/Restore.
+        services.AddSingleton<IGameWindowController, GameWindowController>();
+
         // RoiMapper: без зависимостей
         services.AddSingleton<IRoiMapper, RoiMapper>();
 

@@ -80,4 +80,24 @@ internal sealed class ScopedSettingsRepositoryProxy : ISettingsRepository
             .SaveRoiCalibrationsAsync(rois)
             .ConfigureAwait(false);
     }
+
+    /// <inheritdoc/>
+    public async Task<WindowPlacement?> GetWindowPlacementAsync(string windowKey, CancellationToken ct = default)
+    {
+        await using AsyncServiceScope scope = _sp.CreateAsyncScope();
+        return await scope.ServiceProvider
+            .GetRequiredService<ISettingsRepository>()
+            .GetWindowPlacementAsync(windowKey, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveWindowPlacementAsync(WindowPlacement placement, CancellationToken ct = default)
+    {
+        await using AsyncServiceScope scope = _sp.CreateAsyncScope();
+        await scope.ServiceProvider
+            .GetRequiredService<ISettingsRepository>()
+            .SaveWindowPlacementAsync(placement, ct)
+            .ConfigureAwait(false);
+    }
 }

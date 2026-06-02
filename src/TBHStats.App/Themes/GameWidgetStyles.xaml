@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    GameWidgetStyles.xaml — игровой скин виджета TBHStats.
+    Фиксированная палитра «STATUS TBH»: тёмный фон + светлый бежево-ореховый пергамент + золотые
+    тексты с тёмной окантовкой. НЕ адаптивный (нет ThemeResource системных цветов) — см. ADR-026.
+
+    Шрифты (SIL OFL):
+      GameHeaderFont — Baloo 2 Bold (округлый game-шрифт, имя семейства «Baloo 2», заголовки).
+      GameBodyFont   — Baloo 2 SemiBold (значения/цифры в теле виджета).
+      GamePixelFont  — алиас на GameBodyFont (кнопки, чекбоксы).
+    Источник: fontsource CDN. Лицензия: SIL OFL-1.1 (OFL.txt).
+    DotGothic16/VT323 удалены (заменены Baloo 2, T068 Phase 4b).
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ═══════════════════════════════════════════════════════
+         ШРИФТЫ
+    ═══════════════════════════════════════════════════════ -->
+
+    <!--
+        Baloo 2 Bold — округлый «пузатый» game-шрифт (SIL OFL-1.1).
+        Источник: fontsource.org/fonts/baloo-2 (v23).
+        Имя семейства (nameID=1): "Baloo 2".
+        Используется для заголовка-плашки и лейблов строк.
+    -->
+    <FontFamily x:Key="GameHeaderFont">ms-appx:///Assets/Fonts/Baloo2-Bold.ttf#Baloo 2</FontFamily>
+
+    <!--
+        Baloo 2 SemiBold — полужирный вес для значений/цифр в теле виджета.
+        Источник: fontsource.org/fonts/baloo-2 (v23).
+        Имя семейства (nameID=1): "Baloo 2 SemiBold".
+        FontWeight=SemiBold задаётся в стилях.
+    -->
+    <FontFamily x:Key="GameBodyFont">ms-appx:///Assets/Fonts/Baloo2-SemiBold.ttf#Baloo 2 SemiBold</FontFamily>
+
+    <!--
+        GamePixelFont — алиас на GameBodyFont для кнопок/чекбоксов.
+    -->
+    <FontFamily x:Key="GamePixelFont">ms-appx:///Assets/Fonts/Baloo2-SemiBold.ttf#Baloo 2 SemiBold</FontFamily>
+
+    <!-- ═══════════════════════════════════════════════════════
+         ПАЛИТРА (кисти)
+         Источник: скриншот screenshots/status_1.jpg
+    ═══════════════════════════════════════════════════════ -->
+
+    <!-- Основной тёмный фон окна (почти чёрный с тёплым коричневым оттенком) -->
+    <SolidColorBrush x:Key="GameBackgroundBrush"         Color="#FF1A1512" />
+
+    <!-- Бордовый акцент — заголовочные плашки, активные элементы -->
+    <SolidColorBrush x:Key="GameAccentBrush"             Color="#FF8B2222" />
+
+    <!-- Фон заголовка-плашки (более насыщенный бордовый) -->
+    <SolidColorBrush x:Key="GameHeaderBackgroundBrush"   Color="#FF8B2222" />
+
+    <!-- Текст заголовка-плашки: золотой пиксельный -->
+    <SolidColorBrush x:Key="GameHeaderForegroundBrush"   Color="#FFF0C850" />
+
+    <!-- Светлый бежево-ореховый пергамент — фон панели статов (по screenshots/status_1.jpg) -->
+    <SolidColorBrush x:Key="GamePanelBackgroundBrush"    Color="#FFC8AB78" />
+
+    <!-- Тёмно-коричневая рамка панели (контраст с бежевой подложкой) -->
+    <SolidColorBrush x:Key="GamePanelBorderBrush"        Color="#FF4A2E10" />
+
+    <!-- Лейбл строки статов: глубокий янтарно-коричневый для контраста на бежевой подложке -->
+    <SolidColorBrush x:Key="GameLabelBrush"              Color="#FF7A4A12" />
+
+    <!-- Значение строки статов: кремовый/белый — читается за счёт тёмной окантовки OutlinedTextBlock -->
+    <SolidColorBrush x:Key="GameValueBrush"              Color="#FFFFF8E8" />
+
+    <!-- Вторичный текст (подписи, LastUpdateText) — тёплый тёмно-коричневый -->
+    <SolidColorBrush x:Key="GameSecondaryTextBrush"      Color="#FF6B4520" />
+
+    <!-- Фон кнопок — чуть светлее основного, тёмно-коричневый -->
+    <SolidColorBrush x:Key="GameButtonBackgroundBrush"   Color="#FF3A2518" />
+
+    <!-- Текст кнопок — золотой -->
+    <SolidColorBrush x:Key="GameButtonForegroundBrush"   Color="#FFF0C850" />
+
+    <!-- Граница кнопок — бордовый акцент -->
+    <SolidColorBrush x:Key="GameButtonBorderBrush"       Color="#FF6A1A1A" />
+
+    <!-- Тёмный штрих окантовки текста (OutlinedTextBlock) -->
+    <SolidColorBrush x:Key="GameTextStrokeBrush"         Color="#FF201008" />
+
+    <!-- Бордовый прогресс-индикатор (полоса прогресса этапа; Правка 4 T068) -->
+    <SolidColorBrush x:Key="GameProgressBrush"           Color="#FF8B2222" />
+
+    <!-- Тёмная трека прогресс-бара -->
+    <SolidColorBrush x:Key="GameProgressTrackBrush"      Color="#FF251810" />
+
+    <!-- ═══════════════════════════════════════════════════════
+         СТИЛИ TEXTBLOCK
+    ═══════════════════════════════════════════════════════ -->
+
+    <!--
+        GameHeaderTextStyle — заголовок виджета («TBHSTATS»).
+        Baloo 2 Bold, крупный, широкий трекинг, золотой.
+        Центрирован; стиль заголовков вкладок игры (STATUS/HERO/PORTAL).
+    -->
+    <Style x:Key="GameHeaderTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily"        Value="{StaticResource GameHeaderFont}" />
+        <Setter Property="FontSize"          Value="20" />
+        <Setter Property="FontWeight"        Value="Bold" />
+        <Setter Property="Foreground"        Value="{StaticResource GameHeaderForegroundBrush}" />
+        <Setter Property="TextAlignment"     Value="Center" />
+        <Setter Property="CharacterSpacing"  Value="150" />
+    </Style>
+
+    <!--
+        GameLabelTextStyle — лейбл строки стата (слева).
+        Baloo 2 SemiBold 12 — единый стиль с GameValueTextStyle (Правка 1 T068).
+        Различие от значений — только цветом (янтарный GameLabelBrush).
+    -->
+    <Style x:Key="GameLabelTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily"        Value="{StaticResource GameBodyFont}" />
+        <Setter Property="FontSize"          Value="12" />
+        <Setter Property="FontWeight"        Value="SemiBold" />
+        <Setter Property="Foreground"        Value="{StaticResource GameLabelBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!--
+        GameValueTextStyle — значение строки стата (справа).
+        Baloo 2 SemiBold 12. Используется только для скрытых строк (Collapsed).
+        Видимые значения — через OutlinedTextBlock (с тёмной окантовкой).
+    -->
+    <Style x:Key="GameValueTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily"        Value="{StaticResource GameBodyFont}" />
+        <Setter Property="FontSize"          Value="12" />
+        <Setter Property="FontWeight"        Value="SemiBold" />
+        <Setter Property="Foreground"        Value="{StaticResource GameValueBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!--
+        GameTableHeaderTextStyle — заголовки столбцов таблицы Compare (Правка 2 T068).
+        Baloo 2 SemiBold 12, золотой GameHeaderForegroundBrush — контраст на бордовой шапке.
+        GameLabelTextStyle НЕ изменён (используется на бежевом фоне виджета).
+    -->
+    <Style x:Key="GameTableHeaderTextStyle" TargetType="TextBlock" BasedOn="{StaticResource GameLabelTextStyle}">
+        <Setter Property="Foreground" Value="{StaticResource GameHeaderForegroundBrush}" />
+    </Style>
+
+    <!--
+        GameCaptionTextStyle — вспомогательный мелкий текст (LastUpdateText, подписи).
+        Baloo 2 SemiBold, вторичный тёмно-коричневый цвет.
+    -->
+    <Style x:Key="GameCaptionTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily"        Value="{StaticResource GameBodyFont}" />
+        <Setter Property="FontSize"          Value="10" />
+        <Setter Property="FontWeight"        Value="SemiBold" />
+        <Setter Property="Foreground"        Value="{StaticResource GameSecondaryTextBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- ═══════════════════════════════════════════════════════
+         СТИЛИ BORDER
+    ═══════════════════════════════════════════════════════ -->
+
+    <!--
+        GamePanelBorderStyle — тёмная кожаная панель статов.
+        Тёмно-коричневый фон, рамка, небольшое скругление.
+    -->
+    <Style x:Key="GamePanelBorderStyle" TargetType="Border">
+        <Setter Property="Background"       Value="{StaticResource GamePanelBackgroundBrush}" />
+        <Setter Property="BorderBrush"      Value="{StaticResource GamePanelBorderBrush}" />
+        <Setter Property="BorderThickness"  Value="2" />
+        <Setter Property="CornerRadius"     Value="4" />
+        <Setter Property="Padding"          Value="8,6" />
+    </Style>
+
+    <!--
+        GameHeaderBorderStyle — бордовая заголовочная плашка.
+    -->
+    <Style x:Key="GameHeaderBorderStyle" TargetType="Border">
+        <Setter Property="Background"       Value="{StaticResource GameHeaderBackgroundBrush}" />
+        <Setter Property="BorderBrush"      Value="{StaticResource GameAccentBrush}" />
+        <Setter Property="BorderThickness"  Value="1" />
+        <Setter Property="CornerRadius"     Value="3" />
+        <Setter Property="Padding"          Value="8,4" />
+    </Style>
+
+    <!--
+        GameInnerPillBorderStyle — «пилюля» имени класса героя внутри панели.
+    -->
+    <Style x:Key="GameInnerPillBorderStyle" TargetType="Border">
+        <Setter Property="Background"       Value="{StaticResource GameSecondaryTextBrush}" />
+        <Setter Property="BorderBrush"      Value="{StaticResource GamePanelBorderBrush}" />
+        <Setter Property="BorderThickness"  Value="1" />
+        <Setter Property="CornerRadius"     Value="8" />
+        <Setter Property="Padding"          Value="10,2" />
+    </Style>
+
+    <!-- ═══════════════════════════════════════════════════════
+         СТИЛЬ PROGRESSBAR
+    ═══════════════════════════════════════════════════════ -->
+
+    <!--
+        GameProgressBarStyle — бордовая полоса прогресса этапа (Правка 4 T068).
+        Foreground (индикатор) = бордовый GameProgressBrush (#FF8B2222).
+        Background (трека) = тёмная GameProgressTrackBrush.
+        BasedOn DefaultProgressBarStyle чтобы PointerOver/анимации работали.
+    -->
+    <Style x:Key="GameProgressBarStyle" TargetType="ProgressBar" BasedOn="{StaticResource DefaultProgressBarStyle}">
+        <Setter Property="Foreground"   Value="{StaticResource GameProgressBrush}" />
+        <Setter Property="Background"   Value="{StaticResource GameProgressTrackBrush}" />
+        <Setter Property="Height"       Value="8" />
+        <Setter Property="CornerRadius" Value="3" />
+    </Style>
+
+    <!-- ═══════════════════════════════════════════════════════
+         СТИЛЬ BUTTON
+    ═══════════════════════════════════════════════════════ -->
+
+    <!--
+        GameButtonStyle — кнопка в игровом стиле.
+        Базируется на DefaultButtonStyle; переопределяет цвета.
+        Baloo 2 Bold, FontWeight=Bold.
+    -->
+    <Style x:Key="GameButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+        <Setter Property="Background"       Value="{StaticResource GameButtonBackgroundBrush}" />
+        <Setter Property="Foreground"       Value="{StaticResource GameButtonForegroundBrush}" />
+        <Setter Property="BorderBrush"      Value="{StaticResource GameButtonBorderBrush}" />
+        <Setter Property="BorderThickness"  Value="1" />
+        <Setter Property="FontFamily"       Value="{StaticResource GameHeaderFont}" />
+        <Setter Property="FontSize"         Value="11" />
+        <Setter Property="FontWeight"       Value="Bold" />
+        <Setter Property="CornerRadius"     Value="3" />
+        <Setter Property="Padding"          Value="10,5" />
+    </Style>
+
+    <!--
+        GameCloseButtonStyle — компактная кнопка закрытия «✕» в заголовке.
+        Производный от GameButtonStyle, квадратная, без паддинга.
+    -->
+    <Style x:Key="GameCloseButtonStyle" TargetType="Button" BasedOn="{StaticResource GameButtonStyle}">
+        <Setter Property="FontSize"         Value="13" />
+        <Setter Property="Padding"          Value="4,2" />
+        <Setter Property="MinWidth"         Value="22" />
+        <Setter Property="MinHeight"        Value="22" />
+    </Style>
+
+    <!-- ═══════════════════════════════════════════════════════
+         СТИЛЬ CHECKBOX
+    ═══════════════════════════════════════════════════════ -->
+
+    <!--
+        GameCheckBoxStyle — чекбокс в игровом стиле.
+        Baloo 2 Bold, янтарный Foreground, читаем на бежевой подложке.
+    -->
+    <Style x:Key="GameCheckBoxStyle" TargetType="CheckBox" BasedOn="{StaticResource DefaultCheckBoxStyle}">
+        <Setter Property="Foreground"   Value="{StaticResource GameLabelBrush}" />
+        <Setter Property="FontFamily"   Value="{StaticResource GameHeaderFont}" />
+        <Setter Property="FontSize"     Value="11" />
+        <Setter Property="FontWeight"   Value="Bold" />
+    </Style>
+
+</ResourceDictionary>

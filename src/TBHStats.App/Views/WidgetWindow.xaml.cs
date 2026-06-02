@@ -1,10 +1,13 @@
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using TBHStats.App.ViewModels;
+using TBHStats.Capture.WindowTracking;
 using TBHStats.Core.Models;
 using TBHStats.Data.Repositories;
 using Windows.Graphics;
@@ -17,10 +20,27 @@ namespace TBHStats_App.Views;
 /// <summary>
 /// Компактный виджет живой статистики TBHStats (US1, T028).
 /// DataContext корневого Grid задаётся из DI-контейнера (LiveStatsViewModel).
+/// Title bar скрыт через OverlappedPresenter.SetBorderAndTitleBar(hasBorder:true, hasTitleBar:false).
+/// Перемещение реализовано через Win32 WM_NCLBUTTONDOWN + HTCAPTION по PointerPressed на HeaderBorder.
 /// </summary>
 public sealed partial class WidgetWindow : Window
 {
     private readonly ILogger<WidgetWindow> _logger;
+
+    // ── Трекинг дочерних окон ────────────────────────────────────────────────
+    private CompareHostWindow?    _compareWindow;
+    private CalibrationHostWindow? _calibrationWindow;
+
+    // ── Win32 P/Invoke для drag без title bar ────────────────────────────────
+
+    [LibraryImport("user32.dll")]
+    private static partial void ReleaseCapture();
+
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr SendMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    private const uint WmNclbuttondown = 0x00A1;
+    private const int  HtCaption       = 0x0002;
 
     public WidgetWindow()
     {
@@ -32,8 +52,20 @@ public sealed partial class WidgetWindow : Window
         LiveStatsViewModel vm = App.Services.GetRequiredService<LiveStatsViewModel>();
         RootGrid.DataContext = vm;
 
-        // Стартовый размер виджета (SC-006: компактный, ≤15% экрана).
-        AppWindow.Resize(new SizeInt32(320, 220));
+        // ── Скрыть стандартный Windows title bar (п.2 T068 Phase 4) ──────────
+        // SetBorderAndTitleBar(hasBorder: true, hasTitleBar: false):
+        //   убирает заголовочную полосу и caption-кнопки системы,
+        //   оставляет рамку (для ресайза); IsMaximizable/IsMinimizable=false.
+        // Перемещение обеспечивается P/Invoke в OnHeaderPointerPressed.
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
+        {
+            presenter.SetBorderAndTitleBar(hasBorder: true, hasTitleBar: false);
+            presenter.IsMaximizable = false;
+            presenter.IsMinimizable = false;
+        }
+
+        // Стартовый размер виджета (SC-006: компактный, ≤15% экрана; уменьшен T068 Правка 1).
+        AppWindow.Resize(new SizeInt32(320, 270));
         AppWindow.Title = "TBHStats";
 
         // Применить сохранённые настройки (позиция, topmost) после загрузки.
@@ -45,6 +77,43 @@ public sealed partial class WidgetWindow : Window
         // Остановить оркестратор при закрытии виджета.
         Closed += OnWidgetClosed;
     }
+
+    // ─── Перемещение borderless-окна через Win32 ────────────────────────────
+
+    /// <summary>
+    /// PointerPressed на заголовочной плашке — запустить системное drag-перемещение.
+    /// ReleaseCapture() + WM_NCLBUTTONDOWN(HTCAPTION) передаёт управление DWM:
+    /// окно перемещается штатным образом, позиция фиксируется OnAppWindowChanged.
+    /// </summary>
+    private void OnHeaderPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        // Пропускаем нажатие кнопки ✕ внутри заголовка. OriginalSource обычно вложенный
+        // элемент кнопки (TextBlock/ContentPresenter), поэтому проверяем всю цепочку предков —
+        // иначе клик по ✕ запустил бы drag-перемещение и проглотил бы Click кнопки.
+        if (IsWithinButton(e.OriginalSource as DependencyObject)) return;
+
+        IntPtr hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        ReleaseCapture();
+        SendMessageW(hwnd, WmNclbuttondown, new IntPtr(HtCaption), IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// true, если <paramref name="source"/> или любой его визуальный предок — <see cref="Button"/>.
+    /// </summary>
+    private static bool IsWithinButton(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is Button) return true;
+            source = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(source);
+        }
+
+        return false;
+    }
+
+    // ─── Кнопка ✕ (закрыть виджет) ──────────────────────────────────────────
+
+    private void OnCloseWidgetClicked(object sender, RoutedEventArgs e) => Close();
 
     // ─── Первая активация: применить WidgetSettings ─────────────────────────
 
@@ -92,12 +161,12 @@ public sealed partial class WidgetWindow : Window
             // WidgetSettings использует init-сеттеры — пересоздаём объект с новыми координатами.
             WidgetSettings updated = new()
             {
-                PosX          = AppWindow.Position.X,
-                PosY          = AppWindow.Position.Y,
-                Width         = AppWindow.Size.Width,
-                Height        = AppWindow.Size.Height,
-                AlwaysOnTop   = current.AlwaysOnTop,
-                Theme         = current.Theme,
+                PosX           = AppWindow.Position.X,
+                PosY           = AppWindow.Position.Y,
+                Width          = AppWindow.Size.Width,
+                Height         = AppWindow.Size.Height,
+                AlwaysOnTop    = current.AlwaysOnTop,
+                Theme          = current.Theme,
                 PollIntervalMs = current.PollIntervalMs,
             };
 
@@ -113,10 +182,52 @@ public sealed partial class WidgetWindow : Window
         }
     }
 
-    // ─── Закрытие виджета: остановить оркестратор ────────────────────────────
+    // ─── Закрытие виджета: остановить оркестратор + вернуть окно игры ───────
 
     private async void OnWidgetClosed(object sender, WindowEventArgs args)
     {
+        // ── Авто-закрытие дочерних окон (п.7 T068 Phase 4) ─────────────────
+        if (_compareWindow is not null)
+        {
+            try { _compareWindow.Close(); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Ошибка при закрытии CompareHostWindow при закрытии виджета.");
+            }
+            _compareWindow = null;
+        }
+
+        if (_calibrationWindow is not null)
+        {
+            try { _calibrationWindow.Close(); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Ошибка при закрытии CalibrationHostWindow при закрытии виджета.");
+            }
+            _calibrationWindow = null;
+        }
+
+        // Вернуть окно игры, если оно было уведено за экран.
+        try
+        {
+            IGameWindowController controller = App.Services.GetRequiredService<IGameWindowController>();
+            if (controller.IsHidden)
+            {
+                IGameWindowTracker tracker = App.Services.GetRequiredService<IGameWindowTracker>();
+                GameWindowHandle? window = tracker.FindGameWindow();
+                if (window is not null)
+                {
+                    bool restored = controller.Restore(window);
+                    _logger.LogInformation("Restore при закрытии виджета: {Result}", restored);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Ошибка при возврате окна игры на закрытии виджета.");
+        }
+
+        // Остановить оркестратор.
         try
         {
             await App.Services
@@ -127,6 +238,82 @@ public sealed partial class WidgetWindow : Window
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Ошибка при остановке оркестратора.");
+        }
+    }
+
+    // ─── Чекбокс «Поверх окон» (FR-015) ────────────────────────────────────
+
+    private bool _applyingSettings;
+
+    private async void OnAlwaysOnTopClicked(object sender, RoutedEventArgs e)
+    {
+        // Не реагировать во время программной инициализации чекбокса.
+        if (_applyingSettings) return;
+
+        bool isChecked = AlwaysOnTopCheckBox.IsChecked == true;
+
+        try
+        {
+            if (AppWindow.Presenter is OverlappedPresenter presenter)
+                presenter.IsAlwaysOnTop = isChecked;
+
+            WidgetSettings current = await LoadWidgetSettingsAsync().ConfigureAwait(true);
+
+            WidgetSettings updated = new()
+            {
+                PosX           = current.PosX,
+                PosY           = current.PosY,
+                Width          = current.Width,
+                Height         = current.Height,
+                AlwaysOnTop    = isChecked,
+                Theme          = current.Theme,
+                PollIntervalMs = current.PollIntervalMs,
+            };
+
+            await SaveWidgetSettingsAsync(updated).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Ошибка при применении/сохранении AlwaysOnTop.");
+        }
+    }
+
+    // ─── Кнопка увода окна игры за экран ────────────────────────────────────
+
+    private async void OnHideGameClicked(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            IGameWindowController controller = App.Services.GetRequiredService<IGameWindowController>();
+            IGameWindowTracker    tracker    = App.Services.GetRequiredService<IGameWindowTracker>();
+
+            GameWindowHandle? window = tracker.FindGameWindow();
+            if (window is null)
+            {
+                _logger.LogWarning("HideGame: окно игры не найдено.");
+                HideGameButton.Content = "Game not found";
+                // Через секунду вернуть исходный текст
+                await Task.Delay(1500).ConfigureAwait(true);
+                HideGameButton.Content = controller.IsHidden ? "Restore game" : "Hide game";
+                return;
+            }
+
+            if (controller.IsHidden)
+            {
+                bool result = controller.Restore(window);
+                _logger.LogInformation("Restore окна игры: {Result}", result);
+                HideGameButton.Content = "Hide game";
+            }
+            else
+            {
+                bool result = controller.HideOffScreen(window);
+                _logger.LogInformation("HideOffScreen окна игры: {Result}", result);
+                HideGameButton.Content = "Restore game";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Ошибка при управлении позицией окна игры.");
         }
     }
 
@@ -154,16 +341,58 @@ public sealed partial class WidgetWindow : Window
 
     // ─── Вспомогательные методы открытия окон ───────────────────────────────
 
-    private static void OpenCompareWindow()
+    /// <summary>
+    /// Открывает или активирует окно сравнения.
+    /// При повторном вызове, если окно ещё живо — активирует его (не создаёт дубль).
+    /// Подписывается на Closed чтобы обнулить поле при закрытии.
+    /// </summary>
+    private void OpenCompareWindow()
     {
-        CompareHostWindow compareWindow = new();
-        compareWindow.Activate();
+        if (_compareWindow is not null)
+        {
+            try
+            {
+                _compareWindow.Activate();
+                return;
+            }
+            catch
+            {
+                // Окно уже было уничтожено — создадим новое.
+                _compareWindow = null;
+            }
+        }
+
+        CompareHostWindow newWindow = new();
+        _compareWindow = newWindow;
+        _compareWindow.Closed += (_, _) => _compareWindow = null;
+        _compareWindow.Activate();
     }
 
-    private static void OpenCalibrationWindow()
+    /// <summary>
+    /// Открывает или активирует окно калибровки.
+    /// При повторном вызове, если окно ещё живо — активирует его (не создаёт дубль).
+    /// Подписывается на Closed чтобы обнулить поле при закрытии.
+    /// </summary>
+    private void OpenCalibrationWindow()
     {
-        CalibrationHostWindow calibWindow = new();
-        calibWindow.Activate();
+        if (_calibrationWindow is not null)
+        {
+            try
+            {
+                _calibrationWindow.Activate();
+                return;
+            }
+            catch
+            {
+                // Окно уже было уничтожено — создадим новое.
+                _calibrationWindow = null;
+            }
+        }
+
+        CalibrationHostWindow newWindow = new();
+        _calibrationWindow = newWindow;
+        _calibrationWindow.Closed += (_, _) => _calibrationWindow = null;
+        _calibrationWindow.Activate();
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────
@@ -200,11 +429,21 @@ public sealed partial class WidgetWindow : Window
             AppWindow.Move(new PointInt32((int)ws.PosX, (int)ws.PosY));
         }
 
-        // Режим «поверх всех окон» отключён по требованию: виджет не закрепляется поверх.
-        // Сохранённое значение ws.AlwaysOnTop игнорируется (всегда false).
+        // Применить AlwaysOnTop из сохранённых настроек (FR-015).
         if (AppWindow.Presenter is OverlappedPresenter presenter)
         {
-            presenter.IsAlwaysOnTop = false;
+            presenter.IsAlwaysOnTop = ws.AlwaysOnTop;
+        }
+
+        // Синхронизировать чекбокс без срабатывания обработчика.
+        _applyingSettings = true;
+        try
+        {
+            AlwaysOnTopCheckBox.IsChecked = ws.AlwaysOnTop;
+        }
+        finally
+        {
+            _applyingSettings = false;
         }
     }
 }

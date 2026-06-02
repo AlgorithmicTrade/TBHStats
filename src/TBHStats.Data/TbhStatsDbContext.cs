@@ -65,6 +65,9 @@ public sealed class TbhStatsDbContext : DbContext
     /// <summary>Профиль оптимизации (синглтон).</summary>
     public DbSet<OptimizationProfile> OptimizationProfiles => Set<OptimizationProfile>();
 
+    /// <summary>Геометрия окон (позиция и размер) для восстановления между сессиями (FR-016).</summary>
+    public DbSet<WindowPlacement> WindowPlacements => Set<WindowPlacement>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -178,8 +178,8 @@ public sealed partial class CompareViewModel : ObservableObject
     private bool _isEmpty = true;
 
     /// <summary>
-    /// Текстовый статус рекомендации, например:
-    /// «Рекомендован: 1-5 Nightmare — лучший по золото/час, свежее окно».
+    /// Recommendation status text, e.g.:
+    /// "Recommended: 1-5 Nightmare — best gold/h, recent window".
     /// </summary>
     [ObservableProperty]
     private string _statusText = "—";
@@ -289,10 +289,10 @@ public sealed partial class CompareViewModel : ObservableObject
             // 7. Рекомендованная строка.
             CompareStageRow? recommendedRow = rows.FirstOrDefault(r => r.IsRecommended);
 
-            // 8. Статус.
+            // 8. Status.
             string status = recommendedRow is not null
-                ? $"Рекомендован: {recommendedRow.StageLabel} — {recommendedRow.Reason}"
-                : "Нет данных для рекомендации";
+                ? $"Recommended: {recommendedRow.StageLabel} — {recommendedRow.Reason}"
+                : "No data for recommendation";
 
             // 9. Обновляем UI-коллекцию на UI-потоке.
             void ApplyToUi()
@@ -313,7 +313,7 @@ public sealed partial class CompareViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "CompareViewModel.LoadAsync: не удалось загрузить данные сравнения этапов.");
+            _logger.LogWarning(ex, "CompareViewModel.LoadAsync: failed to load stage comparison data.");
         }
     }
 
@@ -331,7 +331,7 @@ public sealed partial class CompareViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "CompareViewModel.SetMetricAsync: ошибка при смене метрики {Metric}.", metric);
+            _logger.LogWarning(ex, "CompareViewModel.SetMetricAsync: error changing metric {Metric}.", metric);
         }
     }
 
@@ -349,7 +349,7 @@ public sealed partial class CompareViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "CompareViewModel.SetScopeAsync: ошибка при смене scope {Scope}.", aggScope);
+            _logger.LogWarning(ex, "CompareViewModel.SetScopeAsync: error changing scope {Scope}.", aggScope);
         }
     }
 
@@ -367,7 +367,7 @@ public sealed partial class CompareViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "CompareViewModel.SetWindowSizeAsync: ошибка при смене размера окна {WindowSize}.", windowSize);
+            _logger.LogWarning(ex, "CompareViewModel.SetWindowSizeAsync: error changing window size {WindowSize}.", windowSize);
         }
     }
 
@@ -456,30 +456,30 @@ public sealed partial class CompareViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Строит строку диапазона силы отряда для отображения.
-    /// Формат: «ур. {min}–{max}, урон {minFmt}–{maxFmt}» или «—» при отсутствии данных.
+    /// Builds a party power range string for display.
+    /// Format: "lv. {min}–{max}, dmg {minFmt}–{maxFmt}" or "—" when data is absent.
     /// </summary>
     private static string BuildPowerText(StagePowerContext power)
     {
         if (power.HeroLevelMin is null || power.HeroLevelMax is null)
             return "—";
 
-        string levelPart  = $"ур. {power.HeroLevelMin}–{power.HeroLevelMax}";
+        string levelPart  = $"lv. {power.HeroLevelMin}–{power.HeroLevelMax}";
         string damagePart = power.HeroDamageMin.HasValue && power.HeroDamageMax.HasValue
-            ? $", урон {FormatLong(power.HeroDamageMin.Value)}–{FormatLong(power.HeroDamageMax.Value)}"
+            ? $", dmg {FormatLong(power.HeroDamageMin.Value)}–{FormatLong(power.HeroDamageMax.Value)}"
             : string.Empty;
 
         return levelPart + damagePart;
     }
 
     /// <summary>
-    /// Форматирует темп (золото/час, опыт/час) с разделителем тысяч и суффиксом «/ч».
-    /// Например: 1 234 567 → «1 234 567/ч».
+    /// Formats a rate (gold/h, exp/h) with thousand separator and "/h" suffix.
+    /// Example: 1 234 567 → "1 234 567/h".
     /// </summary>
     private static string FormatRate(double value)
     {
-        if (value <= 0) return "0/ч";
-        return $"{value:N0}/ч";
+        if (value <= 0) return "0/h";
+        return $"{value:N0}/h";
     }
 
     /// <summary>

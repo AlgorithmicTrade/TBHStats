@@ -180,6 +180,20 @@
 | `Theme` | enum {`System`,`Light`,`Dark`} | A11y |
 | `PollIntervalMs` | int | по умолчанию ~1500 (Assumptions) |
 
+### WindowPlacement — геометрия окна (FR-016, T068 Phase 5)
+
+Обобщённая запись геометрии для окон приложения, отличных от виджета (виджет использует `WidgetSettings`). Одна запись на окно, идентифицируется строковым ключом.
+
+| Поле | Тип | Правила |
+|------|-----|---------|
+| `WindowKey` | string (PK, ≤64) | идентификатор окна: `«compare»`, `«charts»`, `«calibration»` |
+| `PosX` | double | позиция по горизонтали (пиксели экрана) |
+| `PosY` | double | позиция по вертикали (пиксели экрана) |
+| `Width` | double | ширина окна (пиксели) |
+| `Height` | double | высота окна (пиксели) |
+
+EF-маппинг: реальный string PK `WindowKey` (не shadow). Upsert через `ISettingsRepository.SaveWindowPlacementAsync`. При первом открытии окна запись отсутствует (`GetWindowPlacementAsync` → null) — используются дефолтные размеры кода; при закрытии окна запись создаётся/обновляется.
+
 ---
 
 ## Состояния захвата (capture state machine) — FR-001/FR-005

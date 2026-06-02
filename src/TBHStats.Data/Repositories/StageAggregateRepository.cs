@@ -104,16 +104,20 @@ public sealed class StageAggregateRepository : IStageAggregateRepository
         target.BestXpPerHour       = source.BestXpPerHour;
         target.AvgDurationSeconds  = source.AvgDurationSeconds;
         target.BestDurationSeconds = source.BestDurationSeconds;
+        target.AvgGoldGained       = source.AvgGoldGained;
+        target.AvgXpGained         = source.AvgXpGained;
         target.UpdatedAtUtc        = source.UpdatedAtUtc;
 
         // Recent
-        target.RecentRunCount           = source.RecentRunCount;
-        target.RecentAvgGoldPerHour     = source.RecentAvgGoldPerHour;
-        target.RecentBestGoldPerHour    = source.RecentBestGoldPerHour;
-        target.RecentAvgXpPerHour       = source.RecentAvgXpPerHour;
-        target.RecentBestXpPerHour      = source.RecentBestXpPerHour;
-        target.RecentAvgDurationSeconds = source.RecentAvgDurationSeconds;
+        target.RecentRunCount            = source.RecentRunCount;
+        target.RecentAvgGoldPerHour      = source.RecentAvgGoldPerHour;
+        target.RecentBestGoldPerHour     = source.RecentBestGoldPerHour;
+        target.RecentAvgXpPerHour        = source.RecentAvgXpPerHour;
+        target.RecentBestXpPerHour       = source.RecentBestXpPerHour;
+        target.RecentAvgDurationSeconds  = source.RecentAvgDurationSeconds;
         target.RecentBestDurationSeconds = source.RecentBestDurationSeconds;
+        target.RecentAvgGoldGained       = source.RecentAvgGoldGained;
+        target.RecentAvgXpGained         = source.RecentAvgXpGained;
 
         // Power-context (nullable)
         target.RecentHeroLevelMin  = source.RecentHeroLevelMin;

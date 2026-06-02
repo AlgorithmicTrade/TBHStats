@@ -24,4 +24,16 @@ public interface ISettingsRepository
 
     /// <summary>Сохраняет набор калибровок ROI (FR-003).</summary>
     Task SaveRoiCalibrationsAsync(IReadOnlyList<RoiCalibration> rois);
+
+    /// <summary>
+    /// Возвращает сохранённую геометрию окна по ключу (FR-016),
+    /// или <c>null</c>, если запись для данного ключа отсутствует.
+    /// </summary>
+    Task<WindowPlacement?> GetWindowPlacementAsync(string windowKey, CancellationToken ct = default);
+
+    /// <summary>
+    /// Сохраняет геометрию окна (upsert по <see cref="WindowPlacement.WindowKey"/>):
+    /// создаёт новую запись, если ключ отсутствует; обновляет координаты, если существует (FR-016).
+    /// </summary>
+    Task SaveWindowPlacementAsync(WindowPlacement placement, CancellationToken ct = default);
 }

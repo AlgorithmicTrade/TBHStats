@@ -6,13 +6,14 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:conv="using:TBHStats_App.Views.Converters"
+    xmlns:ctrl="using:TBHStats_App.Views.Controls"
     Title="TBHStats"
     mc:Ignorable="d">
 
     <Grid
         x:Name="RootGrid"
-        Padding="12,10,12,12"
-        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        Padding="8,6,8,8"
+        Background="{StaticResource GameBackgroundBrush}">
 
         <Grid.KeyboardAccelerators>
             <!-- Alt+C — открыть сравнение этапов -->
@@ -27,389 +28,521 @@
         </Grid.Resources>
 
         <Grid.RowDefinitions>
-            <!-- Строка 0: плашка статуса (видима только когда нет данных) -->
+            <!-- Строка 0: заголовок-плашка «TBHSTATS» (зона перетаскивания + ✕) -->
             <RowDefinition Height="Auto" />
-            <!-- Строка 1: основная статистика -->
+            <!-- Строка 1: плашки статуса (видимы только когда нет данных) -->
+            <RowDefinition Height="Auto" />
+            <!-- Строка 2: тёмная кожаная панель с живой статистикой -->
             <RowDefinition Height="*" />
-            <!-- Строка 2: кнопки -->
+            <!-- Строка 3: кнопки и чекбокс -->
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- ── Строка 0: Статус-плашка ─────────────────────────────────────── -->
-
-        <!-- Игра не найдена -->
+        <!-- ── Строка 0: Заголовок-плашка ─────────────────────────────────── -->
+        <!--
+            x:Name="HeaderBorder" используется в code-behind для P/Invoke-перетаскивания.
+            Строка заголовка служит drag-областью (WM_NCLBUTTONDOWN → HTCAPTION).
+            Кнопка ✕ справа вызывает this.Close() → OnWidgetClosed.
+        -->
         <Border
+            x:Name="HeaderBorder"
             Grid.Row="0"
-            AutomationProperties.Name="Статус: игра не найдена"
+            Style="{StaticResource GameHeaderBorderStyle}"
+            Margin="0,0,0,4"
+            HorizontalAlignment="Stretch"
+            PointerPressed="OnHeaderPointerPressed">
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="22" />
+                    <!-- spacer слева равный ширине кнопки ✕ для центрирования заголовка -->
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Заголовок «TBHSTATS» — крупный, широкий, золотой (Baloo 2 Bold) -->
+                <ctrl:OutlinedTextBlock
+                    Grid.Column="1"
+                    Text="TBHSTATS"
+                    Fill="{StaticResource GameHeaderForegroundBrush}"
+                    Stroke="{StaticResource GameTextStrokeBrush}"
+                    OutlineThickness="1.5"
+                    TextFontFamily="{StaticResource GameHeaderFont}"
+                    TextFontSize="20"
+                    TextFontWeight="Bold"
+                    TextAlignment="Center"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Center" />
+
+                <!-- Кнопка ✕ — закрытие виджета -->
+                <Button
+                    Grid.Column="2"
+                    x:Name="CloseWidgetButton"
+                    AutomationProperties.Name="Close widget"
+                    AutomationProperties.AutomationId="CloseWidgetButton"
+                    Content="✕"
+                    Style="{StaticResource GameCloseButtonStyle}"
+                    VerticalAlignment="Center"
+                    Click="OnCloseWidgetClicked"
+                    ToolTipService.ToolTip="Close widget" />
+            </Grid>
+        </Border>
+
+        <!-- ── Строка 1: Статус-плашки ─────────────────────────────────────── -->
+
+        <!-- Game not found -->
+        <Border
+            Grid.Row="1"
+            AutomationProperties.Name="Status: game not found"
             AutomationProperties.LiveSetting="Polite"
-            Background="{ThemeResource SystemFillColorCriticalBackgroundBrush}"
+            Background="#FF5A1010"
             CornerRadius="4"
             Padding="8,4"
-            Margin="0,0,0,8"
+            Margin="0,0,0,4"
             Visibility="{Binding IsGameFound, Converter={StaticResource BoolNegationConverter},
                                   ConverterParameter=Visibility}">
             <TextBlock
-                Text="Игра не найдена"
-                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                FontWeight="SemiBold"
+                Text="Game not found"
+                Foreground="#FFFF9090"
+                FontFamily="{StaticResource GameHeaderFont}"
+                FontWeight="Normal"
                 HorizontalAlignment="Center" />
         </Border>
 
-        <!-- Ожидание -->
+        <!-- Waiting -->
         <Border
-            Grid.Row="0"
-            AutomationProperties.Name="Статус: ожидание окна игры"
+            Grid.Row="1"
+            AutomationProperties.Name="Status: waiting for game window"
             AutomationProperties.LiveSetting="Polite"
-            Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
+            Background="#FF5A4500"
             CornerRadius="4"
             Padding="8,4"
-            Margin="0,0,0,8"
+            Margin="0,0,0,4"
             Visibility="{Binding IsWaiting, Converter={StaticResource BoolToVisibilityConverter}}">
             <TextBlock
-                Text="Ожидание"
-                Foreground="{ThemeResource SystemFillColorCautionBrush}"
-                FontWeight="SemiBold"
+                Text="Waiting"
+                Foreground="#FFFFD060"
+                FontFamily="{StaticResource GameHeaderFont}"
+                FontWeight="Normal"
                 HorizontalAlignment="Center" />
         </Border>
 
-        <!-- ── Строка 1: Живая статистика ─────────────────────────────────── -->
-        <Grid Grid.Row="1" RowSpacing="6">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
+        <!-- ── Строка 2: Тёмная кожаная панель — живая статистика ──────────── -->
+        <Border
+            Grid.Row="2"
+            Style="{StaticResource GamePanelBorderStyle}"
+            Padding="6,4"
+            Margin="0,0,0,4">
 
-            <!-- Золото/час -->
-            <Grid Grid.Row="0" AutomationProperties.Name="Золото в час">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    Text="Золото/ч"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    VerticalAlignment="Center" />
-                <TextBlock
-                    x:Name="GoldPerHourValue"
-                    Grid.Column="1"
-                    AutomationProperties.Name="Золото в час"
-                    AutomationProperties.LiveSetting="Polite"
-                    Text="{Binding GoldPerHourText}"
-                    Style="{StaticResource BodyTextBlockStyle}"
-                    FontWeight="SemiBold"
-                    VerticalAlignment="Center" />
-            </Grid>
+            <Grid RowSpacing="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-            <!-- Опыт/час -->
-            <Grid Grid.Row="1" AutomationProperties.Name="Опыт в час">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    Text="Опыт/ч"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    VerticalAlignment="Center" />
-                <TextBlock
-                    x:Name="XpPerHourValue"
-                    Grid.Column="1"
-                    AutomationProperties.Name="Опыт в час"
-                    AutomationProperties.LiveSetting="Polite"
-                    Text="{Binding XpPerHourText}"
-                    Style="{StaticResource BodyTextBlockStyle}"
-                    FontWeight="SemiBold"
-                    VerticalAlignment="Center" />
-            </Grid>
-
-            <!-- Сундуки/час — ВРЕМЕННО СКРЫТО (обнаружение сундуков отключено, T062 backlog; FieldExtractor.ChestDetectionEnabled) -->
-            <Grid Grid.Row="2" Visibility="Collapsed" AutomationProperties.Name="Сундуки в час по типам">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    Text="Сундуки/ч"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    VerticalAlignment="Center" />
-                <TextBlock
-                    x:Name="ChestsPerHourValue"
-                    Grid.Column="1"
-                    AutomationProperties.Name="Сундуки в час по типам"
-                    AutomationProperties.LiveSetting="Polite"
-                    Text="{Binding ChestsPerHourText}"
-                    Style="{StaticResource BodyTextBlockStyle}"
-                    VerticalAlignment="Center"
-                    ToolTipService.ToolTip="{Binding ChestsPerHourText}" />
-            </Grid>
-
-            <!-- Текущее золото (OCR-контроль) -->
-            <Grid Grid.Row="3" AutomationProperties.Name="Текущее золото">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    Text="Золото"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    VerticalAlignment="Center" />
-                <TextBlock
-                    x:Name="GoldCurrentValue"
-                    Grid.Column="1"
-                    AutomationProperties.Name="Текущее золото"
-                    AutomationProperties.LiveSetting="Polite"
-                    Text="{Binding GoldText}"
-                    Style="{StaticResource BodyTextBlockStyle}"
-                    VerticalAlignment="Center"
-                    ToolTipService.ToolTip="Текущее золото; в скобках — золото, полученное за предыдущий пройденный этап (по боссу)" />
-            </Grid>
-
-            <!-- Текущий опыт (OCR-контроль) -->
-            <Grid Grid.Row="4" AutomationProperties.Name="Текущий опыт">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    Text="Опыт"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    VerticalAlignment="Center" />
-                <TextBlock
-                    x:Name="XpCurrentValue"
-                    Grid.Column="1"
-                    AutomationProperties.Name="Текущий опыт"
-                    AutomationProperties.LiveSetting="Polite"
-                    Text="{Binding XpCurrentText}"
-                    Style="{StaticResource BodyTextBlockStyle}"
-                    VerticalAlignment="Center"
-                    ToolTipService.ToolTip="Текущий опыт / опыт до уровня; в скобках — опыт, полученный за предыдущий пройденный этап (по боссу)" />
-            </Grid>
-
-            <!-- До уровня — оценка времени до следующего уровня при текущем опыт/ч -->
-            <Grid Grid.Row="5" AutomationProperties.Name="Время до следующего уровня">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    Text="До уровня"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    VerticalAlignment="Center" />
-                <TextBlock
-                    x:Name="TimeToLevelValue"
-                    Grid.Column="1"
-                    AutomationProperties.Name="Оценка времени до следующего уровня"
-                    AutomationProperties.LiveSetting="Polite"
-                    Text="{Binding TimeToLevelText}"
-                    Style="{StaticResource BodyTextBlockStyle}"
-                    FontWeight="SemiBold"
-                    VerticalAlignment="Center"
-                    ToolTipService.ToolTip="Оценка по текущему опыту, опыту до уровня и темпу опыт/ч" />
-            </Grid>
-
-            <!-- Текущие сундуки — ВРЕМЕННО СКРЫТО (обнаружение сундуков отключено, T062 backlog; FieldExtractor.ChestDetectionEnabled) -->
-            <Grid Grid.Row="6" Visibility="Collapsed" AutomationProperties.Name="Текущие сундуки по типам">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    Text="Сундуки"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    VerticalAlignment="Center" />
-                <TextBlock
-                    x:Name="ChestsCurrentValue"
-                    Grid.Column="1"
-                    AutomationProperties.Name="Текущие сундуки по типам"
-                    AutomationProperties.LiveSetting="Polite"
-                    Text="{Binding ChestsCurrentText}"
-                    Style="{StaticResource BodyTextBlockStyle}"
-                    VerticalAlignment="Center"
-                    ToolTipService.ToolTip="{Binding ChestsCurrentText}" />
-            </Grid>
-
-            <!-- Герой -->
-            <Grid Grid.Row="7">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    Text="Герой"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    VerticalAlignment="Center" />
-                <StackPanel
-                    Grid.Column="1"
-                    Orientation="Horizontal"
-                    Spacing="4">
-                    <TextBlock
-                        Text="{Binding HeroClassText}"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        VerticalAlignment="Center" />
-                    <TextBlock
-                        Text="{Binding HeroLevelText}"
-                        Style="{StaticResource BodyTextBlockStyle}"
-                        FontWeight="SemiBold"
-                        VerticalAlignment="Center" />
-                    <TextBlock
-                        Text="{Binding HeroDamageText}"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        VerticalAlignment="Center" />
-                </StackPanel>
-            </Grid>
-
-            <!-- Этап -->
-            <Grid Grid.Row="8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    Text="Этап"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    VerticalAlignment="Center" />
-                <TextBlock
-                    Grid.Column="1"
-                    Text="{Binding StageText}"
-                    Style="{StaticResource BodyTextBlockStyle}"
-                    VerticalAlignment="Center"
-                    ToolTipService.ToolTip="Следующая локация (текущий этап + 1)" />
-            </Grid>
-
-            <!-- Прогресс этапа (% + ProgressBar) -->
-            <StackPanel
-                Grid.Row="9"
-                Spacing="2"
-                AutomationProperties.Name="Прогресс этапа">
-                <Grid>
+                <!-- Gold/hour -->
+                <Grid Grid.Row="0" AutomationProperties.Name="Gold per hour">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBlock
                         Grid.Column="0"
-                        Text="Прогресс этапа"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        VerticalAlignment="Center" />
-                    <TextBlock
+                        Text="Gold/h"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        x:Name="GoldPerHourValue"
                         Grid.Column="1"
-                        AutomationProperties.Name="Прогресс текущего этапа"
+                        AutomationProperties.Name="Gold per hour"
                         AutomationProperties.LiveSetting="Polite"
-                        Text="{Binding StageProgressText}"
-                        Style="{StaticResource BodyTextBlockStyle}"
-                        FontWeight="SemiBold"
+                        Text="{Binding GoldPerHourText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
                         VerticalAlignment="Center" />
                 </Grid>
-                <ProgressBar
-                    Minimum="0"
-                    Maximum="1"
-                    Value="{Binding StageProgress}" />
+
+                <!-- Exp/hour -->
+                <Grid Grid.Row="1" AutomationProperties.Name="Exp per hour">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Exp/h"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        x:Name="XpPerHourValue"
+                        Grid.Column="1"
+                        AutomationProperties.Name="Exp per hour"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding XpPerHourText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center" />
+                </Grid>
+
+                <!-- Chests/hour — TEMPORARILY HIDDEN (chest detection disabled, T062 backlog; FieldExtractor.ChestDetectionEnabled) -->
+                <Grid Grid.Row="2" Visibility="Collapsed" AutomationProperties.Name="Chests per hour by type">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Chests/h"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <TextBlock
+                        x:Name="ChestsPerHourValue"
+                        Grid.Column="1"
+                        AutomationProperties.Name="Chests per hour by type"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding ChestsPerHourText}"
+                        Style="{StaticResource GameValueTextStyle}"
+                        ToolTipService.ToolTip="{Binding ChestsPerHourText}" />
+                </Grid>
+
+                <!-- Current gold (OCR control) -->
+                <Grid Grid.Row="3" AutomationProperties.Name="Current gold">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Gold"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        x:Name="GoldCurrentValue"
+                        Grid.Column="1"
+                        AutomationProperties.Name="Current gold"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding GoldText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center"
+                        ToolTipService.ToolTip="Current gold; in parentheses — gold gained on the previous completed stage (by boss)" />
+                </Grid>
+
+                <!-- Current exp (OCR control) -->
+                <Grid Grid.Row="4" AutomationProperties.Name="Current exp">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Exp"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        x:Name="XpCurrentValue"
+                        Grid.Column="1"
+                        AutomationProperties.Name="Current exp"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding XpCurrentText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center"
+                        ToolTipService.ToolTip="Current exp / exp to level; in parentheses — exp gained on the previous completed stage (by boss)" />
+                </Grid>
+
+                <!-- To level — estimated time to next level at current Exp/h -->
+                <Grid Grid.Row="5" AutomationProperties.Name="Time to next level">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="To level"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        x:Name="TimeToLevelValue"
+                        Grid.Column="1"
+                        AutomationProperties.Name="Estimated time to next level"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding TimeToLevelText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center"
+                        ToolTipService.ToolTip="Estimate based on current exp, exp to level and Exp/h rate" />
+                </Grid>
+
+                <!-- Current chests — TEMPORARILY HIDDEN (chest detection disabled, T062 backlog; FieldExtractor.ChestDetectionEnabled) -->
+                <Grid Grid.Row="6" Visibility="Collapsed" AutomationProperties.Name="Current chests by type">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Chests"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <TextBlock
+                        x:Name="ChestsCurrentValue"
+                        Grid.Column="1"
+                        AutomationProperties.Name="Current chests by type"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding ChestsCurrentText}"
+                        Style="{StaticResource GameValueTextStyle}"
+                        ToolTipService.ToolTip="{Binding ChestsCurrentText}" />
+                </Grid>
+
+                <!-- Hero -->
+                <Grid Grid.Row="7">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Hero"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <StackPanel
+                        Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="4">
+                        <TextBlock
+                            Text="{Binding HeroClassText}"
+                            Style="{StaticResource GameCaptionTextStyle}" />
+                        <ctrl:OutlinedTextBlock
+                            Text="{Binding HeroLevelText}"
+                            Fill="{StaticResource GameValueBrush}"
+                            Stroke="{StaticResource GameTextStrokeBrush}"
+                            OutlineThickness="1.0"
+                            TextFontFamily="{StaticResource GameBodyFont}"
+                            TextFontSize="12"
+                            TextFontWeight="SemiBold"
+                            TextAlignment="Right"
+                            VerticalAlignment="Center" />
+                        <TextBlock
+                            Text="{Binding HeroDamageText}"
+                            Style="{StaticResource GameCaptionTextStyle}" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Stage -->
+                <Grid Grid.Row="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Stage"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        Grid.Column="1"
+                        Text="{Binding StageText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center"
+                        ToolTipService.ToolTip="Next location (current stage + 1)" />
+                </Grid>
+
+                <!-- Stage progress (% + ProgressBar) -->
+                <StackPanel
+                    Grid.Row="9"
+                    Spacing="2"
+                    AutomationProperties.Name="Stage progress">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Grid.Column="0"
+                            Text="Stage progress"
+                            Style="{StaticResource GameLabelTextStyle}" />
+                        <ctrl:OutlinedTextBlock
+                            Grid.Column="1"
+                            AutomationProperties.Name="Current stage progress"
+                            AutomationProperties.LiveSetting="Polite"
+                            Text="{Binding StageProgressText}"
+                            Fill="{StaticResource GameValueBrush}"
+                            Stroke="{StaticResource GameTextStrokeBrush}"
+                            OutlineThickness="1.0"
+                            TextFontFamily="{StaticResource GameBodyFont}"
+                            TextFontSize="12"
+                            TextFontWeight="SemiBold"
+                            TextAlignment="Right"
+                            VerticalAlignment="Center" />
+                    </Grid>
+                    <ProgressBar
+                        Minimum="0"
+                        Maximum="1"
+                        Value="{Binding StageProgress}"
+                        Style="{StaticResource GameProgressBarStyle}" />
+                </StackPanel>
+
+                <!-- Time on current stage (segment timer) -->
+                <Grid Grid.Row="10" AutomationProperties.Name="Stage time">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Stage time"
+                        Style="{StaticResource GameLabelTextStyle}" />
+                    <ctrl:OutlinedTextBlock
+                        Grid.Column="1"
+                        AutomationProperties.Name="Time on current stage"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding StageElapsedText}"
+                        Fill="{StaticResource GameValueBrush}"
+                        Stroke="{StaticResource GameTextStrokeBrush}"
+                        OutlineThickness="1.0"
+                        TextFontFamily="{StaticResource GameBodyFont}"
+                        TextFontSize="12"
+                        TextFontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center"
+                        ToolTipService.ToolTip="Current stage time; in parentheses — duration of the previous completed stage (by boss)" />
+                </Grid>
+
+                <!-- Статус + время обновления (устаревание) -->
+                <!--
+                    Строка статуса (T068 Phase 4b): лейбл «Status» в едином GameLabelTextStyle,
+                    значение — OutlinedTextBlock (как у остальных строк виджета).
+                    LastUpdateText — компактная подпись под строкой статуса (GameCaptionTextStyle).
+                -->
+                <StackPanel Grid.Row="11" Spacing="1" Margin="0,2,0,0">
+                    <Grid AutomationProperties.Name="Status">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Grid.Column="0"
+                            Text="Status"
+                            Style="{StaticResource GameLabelTextStyle}" />
+                        <ctrl:OutlinedTextBlock
+                            Grid.Column="1"
+                            AutomationProperties.Name="Capture status"
+                            AutomationProperties.LiveSetting="Polite"
+                            Text="{Binding StatusText}"
+                            Fill="{StaticResource GameValueBrush}"
+                            Stroke="{StaticResource GameTextStrokeBrush}"
+                            OutlineThickness="1.0"
+                            TextFontFamily="{StaticResource GameBodyFont}"
+                            TextFontSize="12"
+                            TextFontWeight="SemiBold"
+                            TextAlignment="Right"
+                            VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock
+                        HorizontalAlignment="Right"
+                        Text="{Binding LastUpdateText}"
+                        Style="{StaticResource GameCaptionTextStyle}"
+                        Opacity="{Binding IsStale, Converter={StaticResource BoolToVisibilityConverter}}"
+                        ToolTipService.ToolTip="Time of last successful read" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ── Строка 3: Чекбокс + кнопки ─────────────────────────────────── -->
+        <Grid Grid.Row="3">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Checkbox "On top" (FR-015) -->
+            <CheckBox
+                x:Name="AlwaysOnTopCheckBox"
+                Grid.Column="0"
+                AutomationProperties.Name="Always on top"
+                AutomationProperties.AutomationId="AlwaysOnTopCheckBox"
+                Content="On top"
+                Style="{StaticResource GameCheckBoxStyle}"
+                VerticalAlignment="Center"
+                Click="OnAlwaysOnTopClicked" />
+
+            <!-- Кнопки справа -->
+            <StackPanel
+                Grid.Column="2"
+                Orientation="Horizontal"
+                HorizontalAlignment="Right"
+                Spacing="6">
+
+                <!-- Button to move game window off-screen -->
+                <Button
+                    x:Name="HideGameButton"
+                    AutomationProperties.Name="Hide or restore game window"
+                    AutomationProperties.AutomationId="HideGameButton"
+                    Content="Hide game"
+                    Style="{StaticResource GameButtonStyle}"
+                    TabIndex="0"
+                    IsTabStop="True"
+                    Click="OnHideGameClicked"
+                    ToolTipService.ToolTip="Move game window off-screen (stats keep collecting)" />
+
+                <Button
+                    x:Name="CompareButton"
+                    AutomationProperties.Name="Open stage comparison"
+                    AutomationProperties.AutomationId="CompareButton"
+                    Content="Compare"
+                    Style="{StaticResource GameButtonStyle}"
+                    TabIndex="1"
+                    IsTabStop="True"
+                    Click="OnCompareClicked"
+                    ToolTipService.ToolTip="Open stage comparison (Alt+C)" />
+
+                <Button
+                    x:Name="CalibrationButton"
+                    AutomationProperties.Name="Open ROI calibration"
+                    AutomationProperties.AutomationId="CalibrationButton"
+                    Content="Calibration"
+                    Style="{StaticResource GameButtonStyle}"
+                    TabIndex="2"
+                    IsTabStop="True"
+                    Click="OnCalibrationClicked"
+                    ToolTipService.ToolTip="Open ROI calibration (Alt+K)" />
+
             </StackPanel>
-
-            <!-- Время на текущем этапе (сегментный таймер) -->
-            <Grid Grid.Row="10" AutomationProperties.Name="Время этапа">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    Text="Время этапа"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    VerticalAlignment="Center" />
-                <TextBlock
-                    Grid.Column="1"
-                    AutomationProperties.Name="Время на текущем этапе"
-                    AutomationProperties.LiveSetting="Polite"
-                    Text="{Binding StageElapsedText}"
-                    Style="{StaticResource BodyTextBlockStyle}"
-                    FontWeight="SemiBold"
-                    VerticalAlignment="Center"
-                    ToolTipService.ToolTip="Время текущего этапа; в скобках — длительность предыдущего пройденного этапа (по боссу)" />
-            </Grid>
-
-            <!-- Статус + время обновления (устаревание) -->
-            <Grid Grid.Row="11" Margin="0,4,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    Text="{Binding StatusText}"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    VerticalAlignment="Center" />
-                <TextBlock
-                    Grid.Column="1"
-                    Text="{Binding LastUpdateText}"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Opacity="{Binding IsStale, Converter={StaticResource BoolToVisibilityConverter}}"
-                    VerticalAlignment="Center"
-                    ToolTipService.ToolTip="Время последнего успешного распознавания" />
-            </Grid>
         </Grid>
-
-        <!-- ── Строка 2: Кнопки ────────────────────────────────────────────── -->
-        <StackPanel
-            Grid.Row="2"
-            Orientation="Horizontal"
-            HorizontalAlignment="Right"
-            Spacing="8"
-            Margin="0,8,0,0">
-
-            <Button
-                x:Name="CompareButton"
-                AutomationProperties.Name="Открыть сравнение этапов"
-                AutomationProperties.AutomationId="CompareButton"
-                Content="Сравнение"
-                TabIndex="0"
-                IsTabStop="True"
-                Click="OnCompareClicked"
-                ToolTipService.ToolTip="Открыть сравнение этапов (Alt+C)" />
-
-            <Button
-                x:Name="CalibrationButton"
-                AutomationProperties.Name="Открыть калибровку ROI"
-                AutomationProperties.AutomationId="CalibrationButton"
-                Content="Калибровка"
-                TabIndex="1"
-                IsTabStop="True"
-                Click="OnCalibrationClicked"
-                ToolTipService.ToolTip="Открыть калибровку ROI (Alt+K)" />
-
-        </StackPanel>
 
     </Grid>
 </Window>

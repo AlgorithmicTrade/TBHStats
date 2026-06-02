@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -5,7 +6,9 @@ using Microsoft.UI.Xaml;
 using TBHStats.App.Services;
 using TBHStats.App.Services.Logging;
 using TBHStats.App.ViewModels;
+using TBHStats.Core.Models;
 using TBHStats.Data;
+using TBHStats.Data.Repositories;
 using TBHStats_App.Views;
 
 // To learn more about WinUI, the WinUI project structure,
@@ -98,6 +101,23 @@ public partial class App : Application
             await using AsyncServiceScope scope = Services.CreateAsyncScope();
             TbhStatsDbContext db = scope.ServiceProvider.GetRequiredService<TbhStatsDbContext>();
             await DatabaseInitializer.InitializeAsync(db).ConfigureAwait(false);
+
+            // 1a. Бэкфилл устаревших агрегатов: пересчёт AvgGoldGained/AvgXpGained после миграции.
+            //     Идемпотентен: условие самоотключается после первого успешного пересчёта.
+            IStageAggregateRepository aggregateRepo =
+                scope.ServiceProvider.GetRequiredService<IStageAggregateRepository>();
+            OptimizationProfile profile =
+                await db.OptimizationProfiles
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync()
+                    .ConfigureAwait(false)
+                ?? new OptimizationProfile();
+            await DatabaseInitializer.BackfillStaleAggregatesAsync(
+                db,
+                aggregateRepo,
+                profile.RecentWindowSize,
+                logger,
+                CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

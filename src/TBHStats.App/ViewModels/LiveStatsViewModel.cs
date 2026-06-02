@@ -128,7 +128,7 @@ public sealed partial class LiveStatsViewModel : ObservableObject
     /// «Данные устаревают…» / «Активно».
     /// </summary>
     [ObservableProperty]
-    private string _statusText = "Игра не найдена";
+    private string _statusText = "Game not found";
 
     /// <summary>true, если окно игры найдено (State != NotFound).</summary>
     [ObservableProperty]
@@ -231,7 +231,7 @@ public sealed partial class LiveStatsViewModel : ObservableObject
         // Прогресс и таймер этапа
         StageProgress     = s.StageProgress ?? 0.0;
         StageProgressText = s.BossPresent == true
-            ? "Босс"
+            ? "Boss"
             : (s.StageProgress is double sp ? sp.ToString("P0") : "—");
         StageElapsedText  = BuildStageElapsedText(s.StageElapsedSeconds, s.LastCompletedStageSeconds);
 
@@ -242,9 +242,9 @@ public sealed partial class LiveStatsViewModel : ObservableObject
 
         StatusText = s.State switch
         {
-            CaptureState.NotFound  => "Игра не найдена",
-            CaptureState.Waiting   => "Ожидание окна игры",
-            CaptureState.Capturing => s.IsStale ? "Данные устаревают…" : "Активно",
+            CaptureState.NotFound  => "Game not found",
+            CaptureState.Waiting   => "Waiting for game window",
+            CaptureState.Capturing => s.IsStale ? "Data stale…" : "Active",
             _                      => "—"
         };
 
@@ -263,8 +263,8 @@ public sealed partial class LiveStatsViewModel : ObservableObject
     /// </summary>
     private static string FormatRate(double value)
     {
-        if (value <= 0) return "0/ч";
-        return $"{value:N0}/ч";
+        if (value <= 0) return "0/h";
+        return $"{value:N0}/h";
     }
 
     /// <summary>
@@ -293,8 +293,8 @@ public sealed partial class LiveStatsViewModel : ObservableObject
             return "—";
 
         // Очень медленный темп → не показываем гигантские/переполняющиеся значения.
-        if (seconds > 359_999.0) // > 99ч 59м 59с
-            return "> 99ч";
+        if (seconds > 359_999.0) // > 99h 59m 59s
+            return "> 99h";
 
         long total = (long)Math.Round(seconds);
         long h = total / 3600;
@@ -302,10 +302,10 @@ public sealed partial class LiveStatsViewModel : ObservableObject
         long sec = total % 60;
 
         if (h > 0)
-            return $"{h}ч {m:D2}м {sec:D2}с";
+            return $"{h}h {m:D2}m {sec:D2}s";
         if (m > 0)
-            return $"{m}м {sec:D2}с";
-        return $"{sec}с";
+            return $"{m}m {sec:D2}s";
+        return $"{sec}s";
     }
 
     /// <summary>
@@ -326,7 +326,7 @@ public sealed partial class LiveStatsViewModel : ObservableObject
             {
                 ChestType? chestType = cfg.ChestTypes.FirstOrDefault(ct => ct.Id == kv.Key);
                 string label = chestType is not null ? chestType.DisplayName : kv.Key.ToString();
-                return $"{label}: {kv.Value:N1}/ч";
+                return $"{label}: {kv.Value:N1}/h";
             }));
     }
 
@@ -369,10 +369,10 @@ public sealed partial class LiveStatsViewModel : ObservableObject
         int sec = total % 60;
 
         if (h > 0)
-            return $"{h}ч {m:D2}м {sec:D2}с";
+            return $"{h}h {m:D2}m {sec:D2}s";
         if (m > 0)
-            return $"{m}м {sec:D2}с";
-        return $"{sec}с";
+            return $"{m}m {sec:D2}s";
+        return $"{sec}s";
     }
 
     /// <summary>

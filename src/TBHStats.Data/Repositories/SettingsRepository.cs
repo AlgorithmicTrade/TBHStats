@@ -82,6 +82,41 @@ public sealed class SettingsRepository : ISettingsRepository
         await _db.SaveChangesAsync().ConfigureAwait(false);
     }
 
+    // ── WindowPlacement (upsert по WindowKey) ──────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<WindowPlacement?> GetWindowPlacementAsync(string windowKey, CancellationToken ct = default)
+    {
+        return await _db.WindowPlacements
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.WindowKey == windowKey, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task SaveWindowPlacementAsync(WindowPlacement placement, CancellationToken ct = default)
+    {
+        // WindowPlacement — immutable (all init); PK = WindowKey (реальное string-поле).
+        // Upsert: если запись с таким WindowKey уже существует — обновляем через Attach+Modified;
+        // если нет — добавляем. EF корректно использует WindowKey как PK при Attach/Add.
+        bool exists = await _db.WindowPlacements
+            .AsNoTracking()
+            .AnyAsync(p => p.WindowKey == placement.WindowKey, ct)
+            .ConfigureAwait(false);
+
+        if (exists)
+        {
+            _db.WindowPlacements.Attach(placement);
+            _db.Entry(placement).State = EntityState.Modified;
+        }
+        else
+        {
+            _db.WindowPlacements.Add(placement);
+        }
+
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
     // ── RoiCalibrations (replace-all) ──────────────────────────────────────
 
     /// <inheritdoc />

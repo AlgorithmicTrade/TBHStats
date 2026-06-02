@@ -32,4 +32,14 @@ public interface IRunRepository
     /// Агрегаты (StageAggregate) НЕ затрагиваются. Возвращает число удалённых сэмплов.
     /// </summary>
     Task<int> PruneSamplesAsync(int stageId, DateTime olderThanUtc, CancellationToken ct);
+
+    /// <summary>
+    /// Удаляет забеги этапа <paramref name="stageId"/>, оставляя только
+    /// <paramref name="keepLast"/> самых свежих (по <c>CompletedAtUtc DESC</c>, затем <c>Id DESC</c>).
+    /// Возвращает число удалённых <see cref="StageRun"/>.
+    /// Дочерние <see cref="StageRunChest"/> удаляются явно первым шагом
+    /// (двухшаговый bulk-DELETE, аналогично <see cref="PruneSamplesAsync"/>),
+    /// так как SQLite без <c>PRAGMA foreign_keys=ON</c> не каскадирует FK при <c>ExecuteDeleteAsync</c>.
+    /// </summary>
+    Task<int> PruneOldRunsAsync(int stageId, int keepLast, CancellationToken ct);
 }

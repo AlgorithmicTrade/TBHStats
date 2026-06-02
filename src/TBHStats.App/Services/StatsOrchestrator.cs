@@ -1,7 +1,6 @@
 using System.Linq;
 using Microsoft.Extensions.Logging;
 using TBHStats.Capture;
-using TBHStats.Capture.Ocr;
 using TBHStats.Capture.Tabs;
 using TBHStats.Capture.Wgc;
 using TBHStats.Core.Mechanics;
@@ -39,7 +38,6 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     private readonly IMetricsCalculator _metricsCalculator;
     private readonly IGameMechanics _gameMechanics;
     private readonly ISettingsRepository _settingsRepository;
-    private readonly IOcrReader _ocrReader;
     private readonly ILogger<StatsOrchestrator> _logger;
     private readonly RunRecorder? _runRecorder;
 
@@ -112,6 +110,31 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     /// <summary>Длительность последней ПРОЙДЕННОЙ (по боссу) попытки в секундах — показывается в скобках. null до первого прохождения.</summary>
     private int? _lastCompletedStageSeconds;
 
+    // ── Сегментные накопители (T064) ──────────────────────────────────────────
+
+    /// <summary>Базовое золото на начало текущего сегмента (первый надёжный кадр сегмента).</summary>
+    private long? _segmentStartGold;
+    /// <summary>Накопленный прирост опыта за текущий сегмент.</summary>
+    private long _segmentXpAccum;
+    /// <summary>Предыдущий XP в пределах уровня (для компенсации level-up внутри сегмента).</summary>
+    private long? _segPrevXp;
+    /// <summary>Предыдущий XpToLevel (для компенсации level-up внутри сегмента).</summary>
+    private long? _segPrevXpToLevel;
+    /// <summary>Предыдущий уровень героя (для детекции level-up внутри сегмента).</summary>
+    private int? _segPrevHeroLevel;
+    /// <summary>Накопленные счётчики сундуков по ChestTypeId за текущий сегмент.</summary>
+    private readonly Dictionary<int, int> _segmentChestAccum = new();
+    /// <summary>Предыдущие мгновенные «точки» сундуков (для вычисления положительных дельт внутри сегмента).</summary>
+    private readonly Dictionary<int, int> _segmentPrevChestPoints = new();
+    /// <summary>StageId, распознанный в текущем сегменте (из sample.StageId). null если этап не появился.</summary>
+    private int? _segmentStageId;
+    /// <summary>Был ли этап распознан через СВЕЖИЙ nextLocation хотя бы раз в текущем сегменте.</summary>
+    private bool _currentStageRecognized;
+    /// <summary>Прирост золота за последний ПРОЙДЕННЫЙ сегмент (для снапшота).</summary>
+    private long? _lastCompletedStageGold;
+    /// <summary>Прирост опыта за последний ПРОЙДЕННЫЙ сегмент (для снапшота).</summary>
+    private long? _lastCompletedStageXp;
+
     /// <summary>Порог падения прогресса (абсолютный), трактуемый как граница сегмента (новый/перезапущенный этап).</summary>
     private const double StageProgressDropThreshold = 0.10;
     /// <summary>Порог прогресса, при котором считаем, что был бой с боссом (1.0 vs макс. пути ≈0.95).</summary>
@@ -179,7 +202,6 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         IMetricsCalculator metricsCalculator,
         IGameMechanics gameMechanics,
         ISettingsRepository settingsRepository,
-        IOcrReader ocrReader,
         ILogger<StatsOrchestrator> logger,
         RunRecorder? runRecorder = null)
     {
@@ -190,7 +212,6 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         ArgumentNullException.ThrowIfNull(metricsCalculator);
         ArgumentNullException.ThrowIfNull(gameMechanics);
         ArgumentNullException.ThrowIfNull(settingsRepository);
-        ArgumentNullException.ThrowIfNull(ocrReader);
         ArgumentNullException.ThrowIfNull(logger);
 
         _session            = session;
@@ -200,7 +221,6 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         _metricsCalculator  = metricsCalculator;
         _gameMechanics      = gameMechanics;
         _settingsRepository = settingsRepository;
-        _ocrReader          = ocrReader;
         _logger             = logger;
         _runRecorder        = runRecorder;
     }
@@ -409,8 +429,14 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         // «Этап» берётся из nextLocation (MainZone, видна всегда) и НЕ зависит от чтения
         // золота/опыта (sample.IsReliable). Обновляем каждый Capturing-кадр из стабилизированного
         // значения; при отсутствии (null) держим последнее известное.
-        if (currentStageRef.HasValue)
-            _lastKnownStage = currentStageRef.Value;
+        // _currentStageRecognized и _segmentStageId сбрасываются только в StartNewSegment —
+        // здесь только устанавливаем (антифликер сохранён).
+        if (sample.StageId.HasValue)
+        {
+            _currentStageRecognized = true;
+            _segmentStageId = sample.StageId.Value;
+            _lastKnownStage = currentStageRef!.Value;
+        }
 
         // ── Диагностика здоровья захвата (throttled ~30 с, только когда нет достоверных данных) ──
         if (!sample.IsReliable)
@@ -426,42 +452,6 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
                 _logger.LogInformation(
                     "Захват активен, но достоверных данных нет. ROI={RoiCount}, activeTab={ActiveTab}, распознано: {Recognized}",
                     rois.Count, activeTabKey, recognized);
-
-                // ВРЕМЕННАЯ ДИАГНОСТИКА (удалить после решения проблемы пустых значений):
-                // сырой OCR-текст ключевых ROI + размеры кадра.
-                _logger.LogInformation(
-                    "[Diag] bitmap={Bw}x{Bh} client={Cw}x{Ch} ROI={Count}",
-                    frame.Bitmap.PixelWidth, frame.Bitmap.PixelHeight,
-                    frame.ClientSize.Width, frame.ClientSize.Height, rois.Count);
-
-                foreach (string key in new[] { "activeTab", "gold", "xp", "heroLevel" })
-                {
-                    RoiCalibration? r = null;
-                    foreach (RoiCalibration cand in rois)
-                        if (string.Equals(cand.FieldKey, key, StringComparison.OrdinalIgnoreCase)) { r = cand; break; }
-
-                    if (r is null)
-                    {
-                        _logger.LogInformation("[Diag] {Key}: ROI не задан", key);
-                        continue;
-                    }
-
-                    try
-                    {
-                        OcrResult dr = await _ocrReader.ReadAsync(frame, r, ct).ConfigureAwait(false);
-                        string text = dr.RawText is { Length: > 0 } ? dr.RawText.Replace("\r", " ").Replace("\n", " ") : "";
-                        if (text.Length > 80) text = text[..80];
-                        _logger.LogInformation(
-                            "[Diag] {Key}: rec={Rec} conf={Conf:F2} text='{Text}'",
-                            key, dr.Recognized, dr.Confidence, text);
-                    }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex)
-                    {
-                        _logger.LogInformation("[Diag] {Key}: ошибка OCR {Err}", key, ex.Message);
-                    }
-                }
-                // КОНЕЦ ВРЕМЕННОЙ ДИАГНОСТИКИ
             }
         }
 
@@ -508,20 +498,9 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
 
             // Обновляем «последние известные» значения из надёжного сэмпла
             UpdateLastKnownValues(sample, obs);
-        }
 
-        // ── Передать кадр в RunRecorder (запись забегов) ─────────────────────
-        if (_runRecorder is not null)
-        {
-            try
-            {
-                await _runRecorder.OnFrameAsync(obs, sample, ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "RunRecorder вернул необработанное исключение; петля продолжается.");
-            }
+            // Накапливаем данные текущего сегмента (T064)
+            AccumulateSegment(sample, obs);
         }
 
         // ── Вычислить темпы + EMA-сглаживание ─────────────────────────────────
@@ -602,22 +581,75 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
 
             if (progressDropped)
             {
-                // Перед падением был босс → этап ПРОЙДЕН: сохранить длительность завершённой попытки.
+                // Перед падением был босс → этап ПРОЙДЕН: сохранить длительность завершённой попытки
+                // и попытаться записать забег.
                 // НО только если завершаемый сегмент был начат от наблюдаемого сброса (начало этапа
                 // увидено) — иначе длительность считалась бы «с середины» (виджет запущен на фазе
                 // босса) и не отражала бы полное время прохождения.
                 if (_bossSeenInSegment && _segmentStartedFromReset && _stageSegmentStartUtc.HasValue)
                 {
-                    _lastCompletedStageSeconds =
+                    int completedSeconds =
                         (int)Math.Max(0, (segmentNow - _stageSegmentStartUtc.Value).TotalSeconds);
+                    _lastCompletedStageSeconds = completedSeconds;
+
+                    // Золото/опыт за завершённый сегмент
+                    long goldGained = (_lastKnownGold.HasValue && _segmentStartGold.HasValue)
+                        ? Math.Max(0L, _lastKnownGold.Value - _segmentStartGold.Value)
+                        : 0L;
+                    long xpGained = Math.Max(0L, _segmentXpAccum);
+
+                    _lastCompletedStageGold = goldGained;
+                    _lastCompletedStageXp   = xpGained;
+
+                    // Запись забега только если этап был распознан из свежего nextLocation
+                    if (_segmentStageId.HasValue && _runRecorder is not null)
+                    {
+                        int capturedStageId = _segmentStageId.Value;
+                        Dictionary<int, int> capturedChests = new(_segmentChestAccum);
+                        int? capturedHeroLevel   = _lastKnownHeroLevel;
+                        long? capturedHeroDamage = _lastKnownHeroDamage;
+                        string? capturedHeroClass = _lastKnownHeroClass;
+                        DateTime capturedAt = segmentNow;
+                        int capturedDuration = Math.Max(1, completedSeconds);
+
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await _runRecorder.PersistSegmentRunAsync(
+                                    stageId:       capturedStageId,
+                                    durationSeconds: capturedDuration,
+                                    goldGained:    goldGained,
+                                    xpGained:      xpGained,
+                                    chests:        capturedChests,
+                                    heroLevel:     capturedHeroLevel,
+                                    heroDamage:    capturedHeroDamage,
+                                    heroClassText: capturedHeroClass,
+                                    completedAtUtc: capturedAt,
+                                    ct:            ct).ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException) { /* нормальный выход */ }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex,
+                                    "RunRecorder.PersistSegmentRunAsync вернул необработанное исключение; петля продолжается.");
+                            }
+                        }, ct);
+                    }
+                    else if (!_segmentStageId.HasValue)
+                    {
+                        _logger.LogDebug(
+                            "Сегмент завершён без распознанного этапа — забег не записан.");
+                    }
                 }
                 // Падение без босса (рестарт/смерть) или сегмент «с середины» — длительность НЕ сохраняем.
 
-                // Вариант 2: в любом случае немедленно стартуем новый сегмент с нуля.
+                // В любом случае немедленно стартуем новый сегмент с нуля.
                 // Это падение — наблюдаемое начало нового этапа → сегмент валиден для учёта времени.
                 _stageSegmentStartUtc    = segmentNow;
                 _bossSeenInSegment       = false;
                 _segmentStartedFromReset = true;
+                StartNewSegment(_lastKnownGold);
             }
             else if (_stageSegmentStartUtc is null)
             {
@@ -625,6 +657,7 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
                 // (стартуем «с середины»): время этой попытки не сохраняем при завершении.
                 _stageSegmentStartUtc    = segmentNow;
                 _segmentStartedFromReset = false;
+                StartNewSegment(_lastKnownGold);
             }
         }
 
@@ -645,11 +678,13 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
             HeroLevel:                    _lastKnownHeroLevel,
             HeroClass:                    _lastKnownHeroClass,
             HeroDamage:                   _lastKnownHeroDamage,
-            Stage:                        _lastKnownStage,
+            Stage:                        _currentStageRecognized ? _lastKnownStage : null,
             StageProgress:                _lastKnownStageProgress,
             BossPresent:                  _lastKnownBossPresent,
             StageElapsedSeconds:          _lastKnownStageElapsedSeconds,
             LastCompletedStageSeconds:    _lastCompletedStageSeconds,
+            LastCompletedStageGold:       _lastCompletedStageGold,
+            LastCompletedStageXp:         _lastCompletedStageXp,
             LastReliableUtc:              lastReliableUtc,
             IsStale:                      isStale,
             Chests:                       _lastKnownChests));
@@ -676,11 +711,13 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
             HeroLevel:                    _lastKnownHeroLevel,
             HeroClass:                    _lastKnownHeroClass,
             HeroDamage:                   _lastKnownHeroDamage,
-            Stage:                        _lastKnownStage,
+            Stage:                        _currentStageRecognized ? _lastKnownStage : null,
             StageProgress:                _lastKnownStageProgress,
             BossPresent:                  _lastKnownBossPresent,
             StageElapsedSeconds:          _lastKnownStageElapsedSeconds,
             LastCompletedStageSeconds:    _lastCompletedStageSeconds,
+            LastCompletedStageGold:       _lastCompletedStageGold,
+            LastCompletedStageXp:         _lastCompletedStageXp,
             LastReliableUtc:              _lastReliableSample?.TakenAtUtc,
             IsStale:                      true,
             Chests:                       _lastKnownChests));
@@ -800,5 +837,85 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
             await Task.Delay(milliseconds, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { /* нормальный выход */ }
+    }
+
+    /// <summary>
+    /// Сбрасывает все сегментные накопители и инициализирует baseline золота для нового сегмента.
+    /// Вызывается в момент старта нового сегмента (progressDropped ИЛИ первый кадр с прогрессом).
+    /// </summary>
+    /// <param name="goldBaseline">
+    /// Текущее известное золото — базовая линия для вычисления прироста за сегмент.
+    /// null, если золото ещё не считалось (будет установлено при первом надёжном кадре).
+    /// </param>
+    private void StartNewSegment(long? goldBaseline)
+    {
+        _segmentStartGold         = goldBaseline;
+        _segmentXpAccum           = 0;
+        _segPrevXp                = null;
+        _segPrevXpToLevel         = null;
+        _segPrevHeroLevel         = null;
+        _segmentChestAccum.Clear();
+        _segmentPrevChestPoints.Clear();
+        _segmentStageId           = null;
+        _currentStageRecognized   = false;
+    }
+
+    /// <summary>
+    /// Накапливает данные текущего сегмента из надёжного кадра (T064).
+    /// Вызывается только в ветке <c>sample.IsReliable</c>, после <c>UpdateLastKnownValues</c>.
+    /// </summary>
+    private void AccumulateSegment(MetricSample sample, RawObservation obs)
+    {
+        // Защита: если сегмент стартовал без золота, устанавливаем baseline из первого кадра.
+        if (_segmentStartGold is null && sample.Gold.HasValue)
+            _segmentStartGold = sample.Gold.Value;
+
+        // ── XP с компенсацией level-up (зеркало логики из AccumulateReliableFrame RunRecorder) ──
+        if (sample.Xp.HasValue)
+        {
+            long curXp    = sample.Xp.Value;
+            int  curLevel = sample.HeroLevel ?? _segPrevHeroLevel ?? 1;
+
+            if (_segPrevXp.HasValue)
+            {
+                bool leveledUp = _segPrevHeroLevel.HasValue && curLevel > _segPrevHeroLevel.Value;
+                long xpDelta;
+
+                if (leveledUp && _segPrevXpToLevel.HasValue)
+                {
+                    long doborToLevelEnd = Math.Max(0L, _segPrevXpToLevel.Value - _segPrevXp.Value);
+                    xpDelta = doborToLevelEnd + Math.Max(0L, curXp);
+                }
+                else
+                {
+                    xpDelta = Math.Max(0L, curXp - _segPrevXp.Value);
+                }
+
+                _segmentXpAccum += xpDelta;
+            }
+
+            _segPrevXp        = curXp;
+            _segPrevXpToLevel = sample.XpToLevel;
+            _segPrevHeroLevel = curLevel;
+        }
+
+        // ── Chests: положительные дельты мгновенных точек (ADR-011) ──────────
+        foreach (KeyValuePair<int, int> kv in obs.Chests)
+        {
+            int chestTypeId    = kv.Key;
+            int currentPoints  = kv.Value;
+
+            if (_segmentPrevChestPoints.TryGetValue(chestTypeId, out int prevPoints))
+            {
+                int delta = currentPoints - prevPoints;
+                if (delta > 0)
+                {
+                    _segmentChestAccum.TryGetValue(chestTypeId, out int accumulated);
+                    _segmentChestAccum[chestTypeId] = accumulated + delta;
+                }
+            }
+
+            _segmentPrevChestPoints[chestTypeId] = currentPoints;
+        }
     }
 }

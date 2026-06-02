@@ -32,8 +32,10 @@ public sealed class StageAggregateCalculator : IStageAggregateCalculator
             RunCount             = completed.Count,
             AvgGoldPerHour       = Average(completed, r => r.GoldPerHour),
             BestGoldPerHour      = Max(completed, r => r.GoldPerHour),
+            AvgGoldGained        = Average(completed, r => (double)r.GoldGained),
             AvgXpPerHour         = Average(completed, r => r.XpPerHour),
             BestXpPerHour        = Max(completed, r => r.XpPerHour),
+            AvgXpGained          = Average(completed, r => (double)r.XpGained),
             AvgDurationSeconds   = Average(completed, r => r.DurationSeconds),
             BestDurationSeconds  = MinInt(completed, r => r.DurationSeconds),
 
@@ -41,8 +43,10 @@ public sealed class StageAggregateCalculator : IStageAggregateCalculator
             RecentRunCount            = window.Count,
             RecentAvgGoldPerHour      = Average(window, r => r.GoldPerHour),
             RecentBestGoldPerHour     = Max(window, r => r.GoldPerHour),
+            RecentAvgGoldGained       = Average(window, r => (double)r.GoldGained),
             RecentAvgXpPerHour        = Average(window, r => r.XpPerHour),
             RecentBestXpPerHour       = Max(window, r => r.XpPerHour),
+            RecentAvgXpGained         = Average(window, r => (double)r.XpGained),
             RecentAvgDurationSeconds  = Average(window, r => r.DurationSeconds),
             RecentBestDurationSeconds = MinInt(window, r => r.DurationSeconds),
 

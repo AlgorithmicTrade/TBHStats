@@ -48,6 +48,12 @@ public sealed partial class CompareViewModel : ObservableObject
     private readonly IStatsOrchestrator          _orchestrator;
     private readonly ILogger<CompareViewModel>   _logger;
     private readonly DispatcherQueue?            _dispatcher;
+    private readonly RunRecorder                 _runRecorder;
+
+    // ── Анти-реентранси автообновления ───────────────────────────────────────
+
+    private bool _isReloading;
+    private bool _reloadPending;
 
     // ── Конструктор ───────────────────────────────────────────────────────────
 
@@ -60,24 +66,91 @@ public sealed partial class CompareViewModel : ObservableObject
         IOptimizationService       optimization,
         OptimizationProfileService profileService,
         IStatsOrchestrator         orchestrator,
-        ILogger<CompareViewModel>  logger)
+        ILogger<CompareViewModel>  logger,
+        RunRecorder                runRecorder)
     {
         ArgumentNullException.ThrowIfNull(scopeFactory);
         ArgumentNullException.ThrowIfNull(optimization);
         ArgumentNullException.ThrowIfNull(profileService);
         ArgumentNullException.ThrowIfNull(orchestrator);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(runRecorder);
 
         _scopeFactory   = scopeFactory;
         _optimization   = optimization;
         _profileService = profileService;
         _orchestrator   = orchestrator;
         _logger         = logger;
+        _runRecorder    = runRecorder;
 
         // Захватываем DispatcherQueue текущего (UI) потока.
         // Если конструктор вызван не на UI-потоке (тесты, headless) — dispatcher будет null,
         // и обновления применятся синхронно.
         _dispatcher = DispatcherQueue.GetForCurrentThread();
+    }
+
+    // ── Автообновление ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Подписывается на <see cref="RunRecorder.RunsChanged"/> для автообновления таблицы.
+    /// Идемпотентно: повторный вызов не создаёт двойную подписку.
+    /// Вызывать из OnLoaded страницы на UI-потоке.
+    /// </summary>
+    public void StartAutoRefresh()
+    {
+        _runRecorder.RunsChanged -= OnRunsChanged;
+        _runRecorder.RunsChanged += OnRunsChanged;
+    }
+
+    /// <summary>
+    /// Отписывается от <see cref="RunRecorder.RunsChanged"/>.
+    /// Вызывать из OnUnloaded страницы, чтобы singleton <see cref="RunRecorder"/>
+    /// не удерживал ссылку на закрытую страницу.
+    /// </summary>
+    public void StopAutoRefresh()
+    {
+        _runRecorder.RunsChanged -= OnRunsChanged;
+    }
+
+    /// <summary>
+    /// Обработчик события RunsChanged: поднимается на фоновом потоке,
+    /// маршалируется в UI-поток перед перезагрузкой.
+    /// </summary>
+    private void OnRunsChanged(object? sender, EventArgs e)
+    {
+        if (_dispatcher is not null)
+            _dispatcher.TryEnqueue(() => _ = ReloadSafeAsync());
+        else
+            _ = ReloadSafeAsync();
+    }
+
+    /// <summary>
+    /// Коалесцирующая перезагрузка: предотвращает наложение параллельных вызовов LoadAsync.
+    /// Если перезагрузка уже идёт — выставляет флаг _reloadPending и возвращается.
+    /// После завершения текущей загрузки запускает ещё одну, если был pending.
+    /// </summary>
+    private async Task ReloadSafeAsync()
+    {
+        if (_isReloading)
+        {
+            _reloadPending = true;
+            return;
+        }
+
+        _isReloading = true;
+        try
+        {
+            do
+            {
+                _reloadPending = false;
+                await LoadAsync().ConfigureAwait(false);
+            }
+            while (_reloadPending);
+        }
+        finally
+        {
+            _isReloading = false;
+        }
     }
 
     // ── Observable-свойства ───────────────────────────────────────────────────
@@ -143,7 +216,9 @@ public sealed partial class CompareViewModel : ObservableObject
             Scope          = profile.Scope;
 
             // 3. Загружаем метки этапов через DbContext (read-only join).
-            Dictionary<int, string> stageLabels = await BuildStageLabelsAsync(db)
+            (Dictionary<int, string> stageLabels,
+             Dictionary<int, string> stageNumberLabels,
+             Dictionary<int, string> difficultyLabels) = await BuildStageLabelsAsync(db)
                 .ConfigureAwait(false);
 
             // 4. Ранжируем.
@@ -171,7 +246,15 @@ public sealed partial class CompareViewModel : ObservableObject
                     ? lbl
                     : ranking.StageId.ToString();
 
-                (double goldPH, double xpPH, int runCount) =
+                string numberLabel = stageNumberLabels.TryGetValue(ranking.StageId, out string? nl)
+                    ? nl
+                    : ranking.StageId.ToString();
+
+                string diffLabel = difficultyLabels.TryGetValue(ranking.StageId, out string? dl)
+                    ? dl
+                    : string.Empty;
+
+                (double goldPH, double xpPH, double avgGold, double avgXp, int runCount) =
                     SelectScopeMetrics(agg, profile.Scope);
 
                 bool isRecommended = bestRanking is not null
@@ -182,18 +265,24 @@ public sealed partial class CompareViewModel : ObservableObject
 
                 rows.Add(new CompareStageRow
                 {
-                    StageId        = ranking.StageId,
-                    StageLabel     = label,
-                    Rank           = ranking.Rank,
-                    IsRecommended  = isRecommended,
-                    GoldPerHour    = goldPH,
-                    XpPerHour      = xpPH,
-                    GoldPerHourText = FormatRate(goldPH),
-                    XpPerHourText   = FormatRate(xpPH),
-                    RunCount       = runCount,
-                    PowerText      = BuildPowerText(ranking.Power),
-                    IsStalePower   = isStalePower,
-                    Reason         = ranking.Reason,
+                    StageId          = ranking.StageId,
+                    StageLabel       = label,
+                    StageNumberLabel = numberLabel,
+                    DifficultyLabel  = diffLabel,
+                    Rank             = ranking.Rank,
+                    IsRecommended    = isRecommended,
+                    GoldPerHour      = goldPH,
+                    XpPerHour        = xpPH,
+                    GoldPerHourText  = FormatRate(goldPH),
+                    XpPerHourText    = FormatRate(xpPH),
+                    AvgGoldGained    = avgGold,
+                    AvgXpGained      = avgXp,
+                    AvgGoldText      = FormatAmount(avgGold),
+                    AvgXpText        = FormatAmount(avgXp),
+                    RunCount         = runCount,
+                    PowerText        = BuildPowerText(ranking.Power),
+                    IsStalePower     = isStalePower,
+                    Reason           = ranking.Reason,
                 });
             }
 
@@ -286,9 +375,18 @@ public sealed partial class CompareViewModel : ObservableObject
 
     /// <summary>
     /// Загружает метки этапов через EF Core: join Stage + Act + Difficulty.
-    /// Формат метки: «{actNumber}-{stageNumber} {difficultyDisplayName}», напр. «1-5 Nightmare».
+    /// Возвращает три словаря по StageId:
+    /// <list type="bullet">
+    ///   <item><c>stageLabels</c> — полная метка «{actNum}-{stageNum} {diffDisplayName}», напр. «1-5 Nightmare».</item>
+    ///   <item><c>stageNumberLabels</c> — только номерная часть «{actNum}-{stageNum}», напр. «1-5».</item>
+    ///   <item><c>difficultyLabels</c> — только сложность, напр. «Normal» / «Nightmare».</item>
+    /// </list>
     /// </summary>
-    private static async Task<Dictionary<int, string>> BuildStageLabelsAsync(TbhStatsDbContext db)
+    private static async Task<(
+        Dictionary<int, string> stageLabels,
+        Dictionary<int, string> stageNumberLabels,
+        Dictionary<int, string> difficultyLabels)>
+        BuildStageLabelsAsync(TbhStatsDbContext db)
     {
         // Загружаем справочники одним запросом каждый (небольшой объём).
         List<Stage>      stages       = await db.Stages.AsNoTracking().ToListAsync().ConfigureAwait(false);
@@ -298,26 +396,32 @@ public sealed partial class CompareViewModel : ObservableObject
         Dictionary<int, int>    actNumber    = acts.ToDictionary(a => a.Id, a => a.Number);
         Dictionary<int, string> diffDisplay  = difficulties.ToDictionary(d => d.Id, d => d.DisplayName);
 
-        Dictionary<int, string> labels = new(stages.Count);
+        Dictionary<int, string> labels       = new(stages.Count);
+        Dictionary<int, string> numberLabels = new(stages.Count);
+        Dictionary<int, string> diffLabels   = new(stages.Count);
+
         foreach (Stage s in stages)
         {
             int    actNum   = actNumber.TryGetValue(s.ActId, out int n) ? n : s.ActId;
             string diffName = diffDisplay.TryGetValue(s.DifficultyId, out string? dn) ? dn : s.DifficultyId.ToString();
-            labels[s.Id] = $"{actNum}-{s.Number} {diffName}";
+
+            labels[s.Id]       = $"{actNum}-{s.Number} {diffName}";
+            numberLabels[s.Id] = $"{actNum}-{s.Number}";
+            diffLabels[s.Id]   = diffName;
         }
 
-        return labels;
+        return (labels, numberLabels, diffLabels);
     }
 
     /// <summary>
     /// Выбирает значения метрик и счётчик забегов по выбранному scope.
     /// </summary>
-    private static (double goldPH, double xpPH, int runCount) SelectScopeMetrics(
+    private static (double goldPH, double xpPH, double avgGold, double avgXp, int runCount) SelectScopeMetrics(
         StageAggregate agg, AggregationScope scope)
     {
         return scope == AggregationScope.Recent
-            ? (agg.RecentAvgGoldPerHour, agg.RecentAvgXpPerHour, agg.RecentRunCount)
-            : (agg.AvgGoldPerHour,       agg.AvgXpPerHour,       agg.RunCount);
+            ? (agg.RecentAvgGoldPerHour, agg.RecentAvgXpPerHour, agg.RecentAvgGoldGained, agg.RecentAvgXpGained, agg.RecentRunCount)
+            : (agg.AvgGoldPerHour,       agg.AvgXpPerHour,       agg.AvgGoldGained,       agg.AvgXpGained,       agg.RunCount);
     }
 
     /// <summary>
@@ -382,4 +486,10 @@ public sealed partial class CompareViewModel : ObservableObject
     /// Форматирует целое число с разделителем тысяч.
     /// </summary>
     private static string FormatLong(long value) => value.ToString("N0");
+
+    /// <summary>
+    /// Форматирует среднее абсолютное значение (золото/опыт за забег) с разделителем тысяч, без суффикса.
+    /// Например: 12 345.6 → «12 346».
+    /// </summary>
+    private static string FormatAmount(double value) => value <= 0 ? "0" : value.ToString("N0");
 }

@@ -28,11 +28,17 @@ public sealed class StageAggregate
     /// <summary>Лучшее золото в час среди учтённых забегов.</summary>
     public double BestGoldPerHour { get; set; }
 
+    /// <summary>Среднее абсолютное золото за один забег по учтённым (non-partial) забегам.</summary>
+    public double AvgGoldGained { get; set; }
+
     /// <summary>Средний опыт в час по учтённым забегам.</summary>
     public double AvgXpPerHour { get; set; }
 
     /// <summary>Лучший опыт в час среди учтённых забегов.</summary>
     public double BestXpPerHour { get; set; }
+
+    /// <summary>Средний абсолютный опыт за один забег по учтённым (non-partial) забегам.</summary>
+    public double AvgXpGained { get; set; }
 
     /// <summary>Средняя продолжительность забега в секундах.</summary>
     public double AvgDurationSeconds { get; set; }
@@ -76,6 +82,12 @@ public sealed class StageAggregate
 
     /// <summary>Лучший опыт в час по свежему окну.</summary>
     public double RecentBestXpPerHour { get; set; }
+
+    /// <summary>Среднее абсолютное золото за один забег по свежему окну.</summary>
+    public double RecentAvgGoldGained { get; set; }
+
+    /// <summary>Средний абсолютный опыт за один забег по свежему окну.</summary>
+    public double RecentAvgXpGained { get; set; }
 
     /// <summary>Средняя продолжительность забега в секундах по свежему окну.</summary>
     public double RecentAvgDurationSeconds { get; set; }

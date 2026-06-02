@@ -34,14 +34,10 @@
             Style="{StaticResource TitleTextBlockStyle}" />
 
         <!-- ── Строка 1: Панель управления ─────────────────────────────────── -->
-        <Grid Grid.Row="1" ColumnSpacing="24">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <Grid Grid.Row="1">
 
             <!-- Цель оптимизации: Золото/час / Опыт/час -->
-            <StackPanel Grid.Column="0" Spacing="4">
+            <StackPanel Spacing="4">
                 <TextBlock
                     x:Name="MetricLabel"
                     Text="Цель оптимизации"
@@ -71,40 +67,6 @@
                         IsTabStop="True"
                         TabIndex="1"
                         Click="OnMetricXpClicked" />
-                </StackPanel>
-            </StackPanel>
-
-            <!-- Набор данных: Свежее окно / Вся история -->
-            <StackPanel Grid.Column="1" Spacing="4">
-                <TextBlock
-                    x:Name="ScopeLabel"
-                    Text="Набор данных"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                <StackPanel
-                    Orientation="Horizontal"
-                    Spacing="8"
-                    AutomationProperties.Name="Набор данных"
-                    AutomationProperties.AutomationId="ScopeGroup">
-                    <RadioButton
-                        x:Name="ScopeRecentButton"
-                        AutomationProperties.Name="Набор данных: свежее окно"
-                        AutomationProperties.AutomationId="ScopeRecentButton"
-                        Content="Свежее окно"
-                        GroupName="ScopeGroup"
-                        IsChecked="True"
-                        IsTabStop="True"
-                        TabIndex="2"
-                        Click="OnScopeRecentClicked" />
-                    <RadioButton
-                        x:Name="ScopeAllTimeButton"
-                        AutomationProperties.Name="Набор данных: вся история"
-                        AutomationProperties.AutomationId="ScopeAllTimeButton"
-                        Content="Вся история"
-                        GroupName="ScopeGroup"
-                        IsTabStop="True"
-                        TabIndex="3"
-                        Click="OnScopeAllTimeClicked" />
                 </StackPanel>
             </StackPanel>
         </Grid>
@@ -153,18 +115,20 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- Шапка таблицы -->
+                <!-- Шапка таблицы. Правый отступ 18 = резерв 14 под полосу прокрутки ListView
+                     (Padding 0,0,14,0) + 4 на выравнивание с Padding ячеек строк. -->
                 <Grid
                     Grid.Row="0"
-                    Padding="4,4,4,6"
+                    Padding="4,4,18,6"
                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="30" />
-                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="110" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="60" />
-                        <ColumnDefinition Width="130" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="56" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="★"
                                Style="{StaticResource CaptionTextBlockStyle}"
@@ -172,22 +136,28 @@
                     <TextBlock Grid.Column="1" Text="Этап"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <TextBlock Grid.Column="2" Text="Золото/ч"
+                    <TextBlock Grid.Column="2" Text="Золото"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               HorizontalAlignment="Right"
+                               ToolTipService.ToolTip="Среднее золото за забег (по сохранённым забегам)" />
+                    <TextBlock Grid.Column="3" Text="Золото/ч"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                HorizontalAlignment="Right" />
-                    <TextBlock Grid.Column="3" Text="Опыт/ч"
+                    <TextBlock Grid.Column="4" Text="Опыт"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               HorizontalAlignment="Right"
+                               ToolTipService.ToolTip="Средний опыт за забег (по сохранённым забегам)" />
+                    <TextBlock Grid.Column="5" Text="Опыт/ч"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                HorizontalAlignment="Right" />
-                    <TextBlock Grid.Column="4" Text="Забегов"
+                    <TextBlock Grid.Column="6" Text="Забегов"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                HorizontalAlignment="Right" />
-                    <TextBlock Grid.Column="5" Text="Сила"
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               Margin="8,0,0,0" />
                 </Grid>
 
                 <!-- Строки этапов -->
@@ -197,7 +167,8 @@
                     AutomationProperties.AutomationId="StagesListView"
                     ItemsSource="{Binding Stages}"
                     SelectionMode="None"
-                    IsItemClickEnabled="False">
+                    IsItemClickEnabled="False"
+                    Padding="0,0,14,0">
 
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
@@ -211,11 +182,12 @@
                             <Grid ColumnSpacing="4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="30" />
-                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="110" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="60" />
-                                    <ColumnDefinition Width="130" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="56" />
                                 </Grid.ColumnDefinitions>
 
                                 <!-- ★ / пусто + Rank — маркер рекомендации -->
@@ -228,24 +200,40 @@
                                     Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                                     Visibility="{Binding IsRecommended, Converter={StaticResource BoolToVisibilityConverter}}" />
 
-                                <!-- Этап -->
+                                <!-- Этап: только номерная часть ("1-5"), сложность скрыта -->
                                 <TextBlock
                                     Grid.Column="1"
-                                    Text="{Binding StageLabel}"
+                                    Text="{Binding StageNumberLabel}"
                                     VerticalAlignment="Center"
+                                    Style="{StaticResource BodyTextBlockStyle}" />
+
+                                <!-- Золото (среднее за забег) -->
+                                <TextBlock
+                                    Grid.Column="2"
+                                    Text="{Binding AvgGoldText}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Right"
                                     Style="{StaticResource BodyTextBlockStyle}" />
 
                                 <!-- Золото/ч -->
                                 <TextBlock
-                                    Grid.Column="2"
+                                    Grid.Column="3"
                                     Text="{Binding GoldPerHourText}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Right"
+                                    Style="{StaticResource BodyTextBlockStyle}" />
+
+                                <!-- Опыт (среднее за забег) -->
+                                <TextBlock
+                                    Grid.Column="4"
+                                    Text="{Binding AvgXpText}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
                                     Style="{StaticResource BodyTextBlockStyle}" />
 
                                 <!-- Опыт/ч -->
                                 <TextBlock
-                                    Grid.Column="3"
+                                    Grid.Column="5"
                                     Text="{Binding XpPerHourText}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
@@ -253,31 +241,11 @@
 
                                 <!-- Забегов -->
                                 <TextBlock
-                                    Grid.Column="4"
+                                    Grid.Column="6"
                                     Text="{Binding RunCount}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
                                     Style="{StaticResource BodyTextBlockStyle}" />
-
-                                <!-- Сила + метка устаревания -->
-                                <StackPanel
-                                    Grid.Column="5"
-                                    Orientation="Horizontal"
-                                    Spacing="4"
-                                    VerticalAlignment="Center"
-                                    Margin="8,0,0,0">
-                                    <TextBlock
-                                        Text="{Binding PowerText}"
-                                        Style="{StaticResource CaptionTextBlockStyle}"
-                                        VerticalAlignment="Center" />
-                                    <!-- A11y: текстовая метка «⚠ устар.», не только цвет -->
-                                    <TextBlock
-                                        Text="⚠ устар."
-                                        Style="{StaticResource CaptionTextBlockStyle}"
-                                        Foreground="{ThemeResource SystemFillColorCautionBrush}"
-                                        VerticalAlignment="Center"
-                                        Visibility="{Binding IsStalePower, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                </StackPanel>
                             </Grid>
                         </DataTemplate>
                     </ListView.ItemTemplate>

@@ -12,7 +12,8 @@ namespace TBHStats_App.Views;
 /// <summary>
 /// Страница сравнения этапов (T041, US2, FR-008/FR-009/FR-017/FR-019).
 /// DataContext устанавливается из DI-контейнера (<see cref="CompareViewModel"/>).
-/// Управление метрикой и scope через code-behind: вызывают команды VM с нужным параметром.
+/// Управление метрикой через code-behind: вызывают команды VM с нужным параметром.
+/// Автообновление таблицы при поступлении новых забегов — через <see cref="CompareViewModel.StartAutoRefresh"/>.
 /// </summary>
 public sealed partial class CompareView : Page
 {
@@ -26,7 +27,8 @@ public sealed partial class CompareView : Page
         _viewModel = TBHStats_App.App.Services.GetRequiredService<CompareViewModel>();
         DataContext = _viewModel;
 
-        Loaded += OnLoaded;
+        Loaded   += OnLoaded;
+        Unloaded += OnUnloaded;
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -36,16 +38,23 @@ public sealed partial class CompareView : Page
         if (_viewModel is null) return;
 
         // Синхронизируем RadioButton-состояния с текущим профилем VM.
-        MetricGoldButton.IsChecked   = _viewModel.SelectedMetric == OptimizationMetric.GoldPerHour;
-        MetricXpButton.IsChecked     = _viewModel.SelectedMetric == OptimizationMetric.XpPerHour;
-        ScopeRecentButton.IsChecked  = _viewModel.Scope == AggregationScope.Recent;
-        ScopeAllTimeButton.IsChecked = _viewModel.Scope == AggregationScope.AllTime;
+        MetricGoldButton.IsChecked = _viewModel.SelectedMetric == OptimizationMetric.GoldPerHour;
+        MetricXpButton.IsChecked   = _viewModel.SelectedMetric == OptimizationMetric.XpPerHour;
 
         // Автозагрузка данных при открытии страницы.
         if (_viewModel.LoadCommand.CanExecute(null))
         {
             _ = _viewModel.LoadCommand.ExecuteAsync(null);
         }
+
+        // Подписываемся на автообновление при поступлении новых забегов.
+        _viewModel.StartAutoRefresh();
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        // Отписываемся, чтобы singleton RunRecorder не держал ссылку на закрытую страницу.
+        _viewModel?.StopAutoRefresh();
     }
 
     // ── Обработчики RadioButton: метрика ─────────────────────────────────────
@@ -65,26 +74,6 @@ public sealed partial class CompareView : Page
         if (_viewModel.SetMetricCommand.CanExecute(OptimizationMetric.XpPerHour))
         {
             _ = _viewModel.SetMetricCommand.ExecuteAsync(OptimizationMetric.XpPerHour);
-        }
-    }
-
-    // ── Обработчики RadioButton: scope ───────────────────────────────────────
-
-    private void OnScopeRecentClicked(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel is null) return;
-        if (_viewModel.SetScopeCommand.CanExecute(AggregationScope.Recent))
-        {
-            _ = _viewModel.SetScopeCommand.ExecuteAsync(AggregationScope.Recent);
-        }
-    }
-
-    private void OnScopeAllTimeClicked(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel is null) return;
-        if (_viewModel.SetScopeCommand.CanExecute(AggregationScope.AllTime))
-        {
-            _ = _viewModel.SetScopeCommand.ExecuteAsync(AggregationScope.AllTime);
         }
     }
 }

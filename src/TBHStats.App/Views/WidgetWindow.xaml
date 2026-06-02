@@ -17,8 +17,6 @@
         <Grid.KeyboardAccelerators>
             <!-- Alt+C — открыть сравнение этапов -->
             <KeyboardAccelerator Modifiers="Menu" Key="C" Invoked="OnCompareAcceleratorInvoked" />
-            <!-- Alt+G — открыть графики трендов -->
-            <KeyboardAccelerator Modifiers="Menu" Key="G" Invoked="OnChartsAcceleratorInvoked" />
             <!-- Alt+K — открыть калибровку ROI -->
             <KeyboardAccelerator Modifiers="Menu" Key="K" Invoked="OnCalibrationAcceleratorInvoked" />
         </Grid.KeyboardAccelerators>
@@ -179,7 +177,8 @@
                     AutomationProperties.LiveSetting="Polite"
                     Text="{Binding GoldText}"
                     Style="{StaticResource BodyTextBlockStyle}"
-                    VerticalAlignment="Center" />
+                    VerticalAlignment="Center"
+                    ToolTipService.ToolTip="Текущее золото; в скобках — золото, полученное за предыдущий пройденный этап (по боссу)" />
             </Grid>
 
             <!-- Текущий опыт (OCR-контроль) -->
@@ -201,7 +200,8 @@
                     AutomationProperties.LiveSetting="Polite"
                     Text="{Binding XpCurrentText}"
                     Style="{StaticResource BodyTextBlockStyle}"
-                    VerticalAlignment="Center" />
+                    VerticalAlignment="Center"
+                    ToolTipService.ToolTip="Текущий опыт / опыт до уровня; в скобках — опыт, полученный за предыдущий пройденный этап (по боссу)" />
             </Grid>
 
             <!-- До уровня — оценка времени до следующего уровня при текущем опыт/ч -->
@@ -390,21 +390,11 @@
             Margin="0,8,0,0">
 
             <Button
-                x:Name="ChartsButton"
-                AutomationProperties.Name="Открыть графики трендов"
-                AutomationProperties.AutomationId="ChartsButton"
-                Content="Графики"
-                TabIndex="0"
-                IsTabStop="True"
-                Click="OnChartsClicked"
-                ToolTipService.ToolTip="Открыть графики трендов (Alt+G)" />
-
-            <Button
                 x:Name="CompareButton"
                 AutomationProperties.Name="Открыть сравнение этапов"
                 AutomationProperties.AutomationId="CompareButton"
                 Content="Сравнение"
-                TabIndex="1"
+                TabIndex="0"
                 IsTabStop="True"
                 Click="OnCompareClicked"
                 ToolTipService.ToolTip="Открыть сравнение этапов (Alt+C)" />
@@ -414,7 +404,7 @@
                 AutomationProperties.Name="Открыть калибровку ROI"
                 AutomationProperties.AutomationId="CalibrationButton"
                 Content="Калибровка"
-                TabIndex="2"
+                TabIndex="1"
                 IsTabStop="True"
                 Click="OnCalibrationClicked"
                 ToolTipService.ToolTip="Открыть калибровку ROI (Alt+K)" />

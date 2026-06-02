@@ -112,4 +112,65 @@ public sealed class RunRepository : IRunRepository
             .ExecuteDeleteAsync(ct)
             .ConfigureAwait(false);
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Оставляет <paramref name="keepLast"/> самых свежих забегов этапа
+    /// (сортировка: <c>CompletedAtUtc DESC</c>, затем <c>Id DESC</c> для детерминизма).
+    /// Удаление двухшаговое:
+    ///   1. Bulk-DELETE зависимых <see cref="StageRunChest"/> (FK <c>StageRunId</c>)
+    ///      для удаляемых забегов — SQLite без PRAGMA foreign_keys не каскадирует FK.
+    ///   2. Bulk-DELETE самих <see cref="StageRun"/>.
+    /// Список Id удаляемых забегов материализуется через <c>ToListAsync</c> перед
+    /// <c>ExecuteDeleteAsync</c>, чтобы избежать проблем трансляции вложенных NOT-IN
+    /// подзапросов в SQLite при <c>ExecuteDeleteAsync</c> (EF Core / SQLite ограничение).
+    /// Возвращает число удалённых родительских строк (<see cref="StageRun"/>).
+    /// </remarks>
+    public async Task<int> PruneOldRunsAsync(int stageId, int keepLast, CancellationToken ct)
+    {
+        // Определяем Id забегов, которые нужно ОСТАВИТЬ (keepLast самых свежих).
+        IQueryable<long> idsToKeepQuery = _db.StageRuns
+            .Where(r => r.StageId == stageId)
+            .OrderByDescending(r => r.CompletedAtUtc)
+            .ThenByDescending(r => r.Id)
+            .Take(keepLast)
+            .Select(r => r.Id);
+
+        // Материализуем список Id для удаления, чтобы NOT-IN над подзапросом
+        // гарантированно транслировался в SQLite без ошибок трансляции EF Core.
+        List<long> idsToKeep = await idsToKeepQuery
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        // Если забегов keepLast или меньше — нечего удалять.
+        if (idsToKeep.Count < keepLast)
+        {
+            return 0;
+        }
+
+        List<long> idsToDelete = await _db.StageRuns
+            .Where(r => r.StageId == stageId && !idsToKeep.Contains(r.Id))
+            .Select(r => r.Id)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        if (idsToDelete.Count == 0)
+        {
+            return 0;
+        }
+
+        // Шаг 1: удалить дочерние StageRunChest для удаляемых забегов.
+        // ExecuteDeleteAsync работает с bulk-SQL и не загружает граф EF,
+        // поэтому FK-каскад SQLite не срабатывает — удаляем детей явно.
+        await _db.StageRunChests
+            .Where(c => idsToDelete.Contains(c.StageRunId))
+            .ExecuteDeleteAsync(ct)
+            .ConfigureAwait(false);
+
+        // Шаг 2: удалить сами забеги и вернуть их количество.
+        return await _db.StageRuns
+            .Where(r => idsToDelete.Contains(r.Id))
+            .ExecuteDeleteAsync(ct)
+            .ConfigureAwait(false);
+    }
 }

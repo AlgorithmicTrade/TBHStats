@@ -99,12 +99,13 @@ public static class Composition
         services.AddSingleton<IStageCompletionDetector, StageCompletionDetector>();
 
         // RunRecorder: singleton; scoped-репозитории получает через IServiceScopeFactory
-        // (scope создаётся и освобождается на каждый вызов записи забега).
+        // (scope создаётся и освобождается на каждый вызов PersistSegmentRunAsync).
+        // IStageCompletionDetector больше не инжектируется в RunRecorder (сегментная логика
+        // переехала в StatsOrchestrator — T064).
         services.AddSingleton<RunRecorder>(sp => new RunRecorder(
-            scopeFactory:       sp.GetRequiredService<IServiceScopeFactory>(),
-            completionDetector: sp.GetRequiredService<IStageCompletionDetector>(),
-            gameMechanics:      sp.GetRequiredService<IGameMechanics>(),
-            logger:             sp.GetRequiredService<ILogger<RunRecorder>>()));
+            scopeFactory:  sp.GetRequiredService<IServiceScopeFactory>(),
+            gameMechanics: sp.GetRequiredService<IGameMechanics>(),
+            logger:        sp.GetRequiredService<ILogger<RunRecorder>>()));
 
         // OptimizationProfileService: singleton; ISettingsRepository (scoped) получает через
         // IServiceScopeFactory — scope создаётся и освобождается на каждый вызов.
@@ -157,7 +158,6 @@ public static class Composition
                 metricsCalculator:  sp.GetRequiredService<IMetricsCalculator>(),
                 gameMechanics:      sp.GetRequiredService<IGameMechanics>(),
                 settingsRepository: settingsProxy,
-                ocrReader:          sp.GetRequiredService<IOcrReader>(),
                 logger:             sp.GetRequiredService<ILogger<StatsOrchestrator>>(),
                 runRecorder:        sp.GetRequiredService<RunRecorder>());
         });

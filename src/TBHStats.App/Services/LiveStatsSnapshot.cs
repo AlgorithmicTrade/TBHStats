@@ -48,6 +48,14 @@ namespace TBHStats.App.Services;
 /// Длительность предыдущей ПРОЙДЕННОЙ (по боссу) попытки в секундах; показывается в скобках для сравнения.
 /// Null до первого прохождения.
 /// </param>
+/// <param name="LastCompletedStageGold">
+/// Прирост золота за последний ПРОЙДЕННЫЙ (по боссу) сегмент этапа.
+/// Null до первого прохождения.
+/// </param>
+/// <param name="LastCompletedStageXp">
+/// Прирост опыта за последний ПРОЙДЕННЫЙ (по боссу) сегмент этапа.
+/// Null до первого прохождения.
+/// </param>
 public sealed record LiveStatsSnapshot(
     CaptureState State,
     LiveRates Rates,
@@ -62,6 +70,8 @@ public sealed record LiveStatsSnapshot(
     bool? BossPresent,
     int? StageElapsedSeconds,
     int? LastCompletedStageSeconds,
+    long? LastCompletedStageGold,
+    long? LastCompletedStageXp,
     DateTime? LastReliableUtc,
     bool IsStale,
     IReadOnlyDictionary<int, int> Chests)
@@ -84,6 +94,8 @@ public sealed record LiveStatsSnapshot(
         BossPresent:                  null,
         StageElapsedSeconds:          null,
         LastCompletedStageSeconds:    null,
+        LastCompletedStageGold:       null,
+        LastCompletedStageXp:         null,
         LastReliableUtc:              null,
         IsStale:                      true,
         Chests:                       new Dictionary<int, int>());

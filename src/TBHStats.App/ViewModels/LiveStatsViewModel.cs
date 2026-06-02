@@ -218,15 +218,13 @@ public sealed partial class LiveStatsViewModel : ObservableObject
         HeroDamageText = s.HeroDamage is long dmg ? FormatLong(dmg)               : "—";
 
         // Текущие значения (OCR-контроль)
-        XpCurrentText     = s.Xp is long xp
-            ? $"{FormatLong(xp)} / {(s.XpToLevel is long t ? FormatLong(t) : "—")}"
-            : "—";
+        XpCurrentText     = BuildXpCurrentText(s.Xp, s.XpToLevel, s.LastCompletedStageXp);
         ChestsCurrentText = BuildChestsCountText(s.Chests);
         TimeToLevelText   = BuildTimeToLevelText(s.Xp, s.XpToLevel, s.Rates.XpPerHour);
 
         // Золото и этап
         Gold      = s.Gold;
-        GoldText  = s.Gold  is long g ? FormatLong(g) : "—";
+        GoldText  = BuildGoldText(s.Gold, s.LastCompletedStageGold);
         // «Этап» показываем как «акт-этап» (напр. «3-1»); сложность в MainZone не отображается.
         StageText = s.Stage is StageRef sr ? $"{sr.ActNumber}-{sr.StageNumber}" : "—";
 
@@ -375,6 +373,35 @@ public sealed partial class LiveStatsViewModel : ObservableObject
         if (m > 0)
             return $"{m}м {sec:D2}с";
         return $"{sec}с";
+    }
+
+    /// <summary>
+    /// Форматирует текущее золото, дополняя золотом за предыдущий пройденный этап в скобках.
+    /// Формат: «1 234 567 (12 345)» или «1 234 567» (без скобок если нет данных предыдущего этапа).
+    /// Возвращает «—» если текущее золото не известно.
+    /// </summary>
+    private static string BuildGoldText(long? gold, long? lastCompletedStageGold)
+    {
+        if (gold is not long g) return "—";
+        string current = FormatLong(g);
+        return lastCompletedStageGold is long sg
+            ? $"{current} ({FormatLong(sg)})"
+            : current;
+    }
+
+    /// <summary>
+    /// Форматирует текущий опыт / опыт до уровня, дополняя опытом за предыдущий пройденный этап в скобках.
+    /// Формат: «1 234 567 / 2 000 000 (45 678)» или «1 234 567 / 2 000 000» (без скобок если нет данных).
+    /// Возвращает «—» если текущий опыт не известен.
+    /// </summary>
+    private static string BuildXpCurrentText(long? xp, long? xpToLevel, long? lastCompletedStageXp)
+    {
+        if (xp is not long current) return "—";
+        string toLevel = xpToLevel is long t ? FormatLong(t) : "—";
+        string result = $"{FormatLong(current)} / {toLevel}";
+        return lastCompletedStageXp is long sx
+            ? $"{result} ({FormatLong(sx)})"
+            : result;
     }
 
     /// <summary>

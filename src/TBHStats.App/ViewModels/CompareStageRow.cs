@@ -12,8 +12,21 @@ public sealed class CompareStageRow
     /// <summary>
     /// Метка этапа в формате «{actNumber}-{stageNumber} {difficultyDisplayName}»,
     /// например «1-5 Nightmare». Строится по join Stage/Act/Difficulty.
+    /// Используется в <see cref="TBHStats.App.ViewModels.CompareViewModel.StatusText"/>.
     /// </summary>
     public required string StageLabel { get; init; }
+
+    /// <summary>
+    /// Номерная часть метки этапа, без сложности: «{actNumber}-{stageNumber}»,
+    /// например «1-5». Отображается в колонке «Этап» таблицы сравнения.
+    /// </summary>
+    public required string StageNumberLabel { get; init; }
+
+    /// <summary>
+    /// Сложность этапа («Normal» / «Nightmare»).
+    /// Данные подготовлены в модели, колонка сложности визуально скрыта (требование UI).
+    /// </summary>
+    public required string DifficultyLabel { get; init; }
 
     /// <summary>1-based место в ранжированном списке (1 — лучший).</summary>
     public required int Rank { get; init; }
@@ -32,6 +45,18 @@ public sealed class CompareStageRow
 
     /// <summary>Опыт/час, отформатированное для отображения («1 234 567/ч»).</summary>
     public required string XpPerHourText { get; init; }
+
+    /// <summary>Среднее абсолютное золото за забег по выбранному scope (числовое значение для сортировки).</summary>
+    public required double AvgGoldGained { get; init; }
+
+    /// <summary>Средний абсолютный опыт за забег по выбранному scope (числовое значение для сортировки).</summary>
+    public required double AvgXpGained { get; init; }
+
+    /// <summary>Среднее золото за забег, отформатированное для отображения («12 345»).</summary>
+    public required string AvgGoldText { get; init; }
+
+    /// <summary>Средний опыт за забег, отформатированный для отображения («12 345»).</summary>
+    public required string AvgXpText { get; init; }
 
     /// <summary>Число забегов в выбранном scope.</summary>
     public required int RunCount { get; init; }

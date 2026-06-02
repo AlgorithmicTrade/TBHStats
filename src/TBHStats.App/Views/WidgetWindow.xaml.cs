@@ -130,10 +130,6 @@ public sealed partial class WidgetWindow : Window
         }
     }
 
-    // ─── Кнопка «Графики» ───────────────────────────────────────────────────
-
-    private void OnChartsClicked(object sender, RoutedEventArgs e) => OpenChartsWindow();
-
     // ─── Кнопка «Сравнение» ─────────────────────────────────────────────────
 
     private void OnCompareClicked(object sender, RoutedEventArgs e) => OpenCompareWindow();
@@ -142,13 +138,7 @@ public sealed partial class WidgetWindow : Window
 
     private void OnCalibrationClicked(object sender, RoutedEventArgs e) => OpenCalibrationWindow();
 
-    // ─── KeyboardAccelerator-обработчики (Alt+G / Alt+C / Alt+K) ────────────
-
-    private void OnChartsAcceleratorInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
-    {
-        OpenChartsWindow();
-        args.Handled = true;
-    }
+    // ─── KeyboardAccelerator-обработчики (Alt+C / Alt+K) ───────────────────
 
     private void OnCompareAcceleratorInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
@@ -163,12 +153,6 @@ public sealed partial class WidgetWindow : Window
     }
 
     // ─── Вспомогательные методы открытия окон ───────────────────────────────
-
-    private static void OpenChartsWindow()
-    {
-        ChartsHostWindow chartsWindow = new();
-        chartsWindow.Activate();
-    }
 
     private static void OpenCompareWindow()
     {

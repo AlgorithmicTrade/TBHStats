@@ -7,10 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-06-02
+
+### Added
+- **Stats**: сегментная запись забегов, золото/опыт за этап в виджете и доработки таблицы Сравнение (378d3e4)
+
 ## [0.1.11] - 2026-06-02
 
 ### Added
 - **Stats**: запись забегов + надёжное чтение этапа, прогресса и времени этапа (T063) (83d6dc1)
+  - **App/виджет**: строки «Прогресс этапа» (% + `ProgressBar`) и «Время этапа» (живой таймер + длительность предыдущей пройденной попытки в скобках). Новые поля `StageProgress`/`BossPresent`/`StageElapsedSeconds`/`LastCompletedStageSeconds` в `LiveStatsSnapshot`.
+  - **Сегментный таймер этапа** (`StatsOrchestrator`): привязан к визуальному прогрессу (сброс по падению заливки, а не по OCR-номеру этапа); время прохождения сохраняется только для полностью наблюдённого этапа (от сброса до босса); сброс при потере окна.
+  - **Запись забегов разблокирована**: устранён `FOREIGN KEY constraint failed` при записи `StageRun` (пустой справочник `HeroClasses`) — дефолтный класс «Не определён» как FK-якорь + self-heal существующих БД; нераспознанный класс героя больше не помечает забег `IsPartial`. Разделы «Графики» и «Сравнение» наполняются.
+  - **StageId**: резолв из `nextLocation.Previous()` через config-driven `GameMechanicsConfig.ResolveStageId` (справочники Acts/Difficulties/Stages); сброс `RunRecorder` при `NotFound`.
+  - **Чтение «Этап»**: бинаризация мелкого пиксельного `nextLocation` (`OcrReader.BinarizeWhite`, `ParseHint="binarize_white"` + апскейл до 192) — исправляет нечитаемые цифры 4/6 (этапы 2-4/2-6/3-4/3-6, подтверждено на живой игре); оконный стабилизатор значения (`NextLocationStabilizer`, ≥2 из 5 + sanity по `ResolveStageId`); обновление «Этап» вне гейта `IsReliable`; авто-включение хинта через сидинг + self-heal `DatabaseInitializer`. heroLevel (T066) бинаризация не нужна — читается штатно.
+  - Сборка 0/0; тесты Core 298/298, Capture 115/115, Data 84/84.
 
 ## [0.1.10] - 2026-06-02
 

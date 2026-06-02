@@ -24,6 +24,11 @@ namespace TBHStats.Capture.Ocr;
 ///   <item>Кроп <see cref="SoftwareBitmap"/> к пиксельному прямоугольнику через прямой доступ
 ///         к пикселям кадра (без BMP-кодека). Полнокадровый буфер кэшируется на уровне кадра
 ///         (ключ — ссылка <c>ReferenceEquals</c>); sub-rect вырезается построчной копией.</item>
+///   <item>Опциональная бинаризация: если <c>roi.ParseHint == "binarize_white"</c> —
+///         пороговая бинаризация по яркости (<see cref="BinarizeWhiteThreshold"/>).
+///         Пиксели с яркостью ≥ порога → белые; остальные → чёрные.
+///         Устраняет цветовые боевые эффекты (синий лёд, жёлтый урон, зелёные полоски),
+///         выделяя белый текст на тёмном фоне (применяется для <c>nextLocation</c>).</item>
 ///   <item>Распознавание кропа через <c>WinOcrEngine.RecognizeAsync</c>.</item>
 ///   <item>Confidence вычисляется как геометрическое покрытие: отношение суммарной площади
 ///         bounding-box'ов слов к площади ROI (clamp [0..1]).</item>
@@ -86,18 +91,30 @@ public sealed class OcrReader : IOcrReader
         if (cropped is null)
             return NotRecognized;
 
+        // Бинаризация: применяется когда ParseHint == "binarize_white".
+        // Пиксели с яркостью ≥ BinarizeWhiteThreshold → белые; остальные → чёрные.
+        // Устраняет цветовые боевые эффекты (синий лёд, жёлтый урон), изолируя белый текст.
+        // Используется для nextLocation (мелкий белый текст рядом с яркими эффектами).
+        bool binarize = string.Equals(roi.ParseHint, BinarizeWhiteParseHint, StringComparison.Ordinal);
+        using SoftwareBitmap? binarized = binarize ? BinarizeWhite(cropped, BinarizeWhiteThreshold) : null;
+        SoftwareBitmap cropSrc = binarized ?? cropped;
+
         // Паддинг: добавляем однотонный бордюр вокруг очень тесных кропов перед апскейлом.
         // Применяется только при min(w,h) < PaddingThreshold — агрессивный апскейл (×3 и выше)
         // сглаживает тонкие глифы (запятая, точка) у края кропа при Fant-интерполяции.
         // При больших кропах (h ≥ 40px) паддинг не нужен: апскейл умеренный (×1–×2).
-        int minCropDim = Math.Min(cropped.PixelWidth, cropped.PixelHeight);
+        int minCropDim = Math.Min(cropSrc.PixelWidth, cropSrc.PixelHeight);
         using SoftwareBitmap? paddedForScale = minCropDim < PaddingThreshold
-            ? AddPadding(cropped, OcrPaddingPixels)
+            ? AddPadding(cropSrc, OcrPaddingPixels)
             : null;
-        SoftwareBitmap scaleSrc = paddedForScale ?? cropped;
+        SoftwareBitmap scaleSrc = paddedForScale ?? cropSrc;
 
         // Апскейл маленьких кропов (Windows.Media.Ocr не читает слишком мелкие изображения).
-        SoftwareBitmap ocrInput = await UpscaleForOcrAsync(scaleSrc, WinOcrEngine.MaxImageDimension, ct).ConfigureAwait(false);
+        // Для бинаризованных кропов применяем более агрессивный целевой размер: пиксельный шрифт
+        // nextLocation (~15px) требует апскейла до ≥192px (×2 от стандартного MinOcrDimension),
+        // чтобы отдельные пиксели глифов не сливались после Fant-интерполяции.
+        int targetDim = binarize ? MinOcrDimensionBinarized : MinOcrDimension;
+        SoftwareBitmap ocrInput = await UpscaleForOcrAsync(scaleSrc, WinOcrEngine.MaxImageDimension, targetDim, ct).ConfigureAwait(false);
 
         // Конвертировать в формат, требуемый WinOcrEngine (Bgra8 Premultiplied)
         SoftwareBitmap bitmapForOcr = EnsureOcrFormat(ocrInput);
@@ -121,8 +138,8 @@ public sealed class OcrReader : IOcrReader
             // Освобождаем конвертированный bitmap только если он — новый объект (не тот же, что ocrInput)
             if (!ReferenceEquals(bitmapForOcr, ocrInput))
                 bitmapForOcr.Dispose();
-            // Освобождаем апскейленный bitmap только если он — новый объект (не тот же, что cropped)
-            if (!ReferenceEquals(ocrInput, cropped))
+            // Освобождаем апскейленный bitmap только если он — новый объект (не тот же, что cropSrc)
+            if (!ReferenceEquals(ocrInput, cropSrc))
                 ocrInput.Dispose();
         }
     }
@@ -352,6 +369,47 @@ public sealed class OcrReader : IOcrReader
         return result;
     }
 
+    // ── бинаризация белого текста ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Пороговая бинаризация: пиксели с яркостью ≥ <paramref name="threshold"/> → белые;
+    /// остальные → чёрные. Выделяет белый текст, устраняя цветовые боевые эффекты.
+    /// </summary>
+    /// <remarks>
+    /// Яркость вычисляется как среднее (R + G + B) / 3 (без гамма-коррекции — достаточно
+    /// для практических порогов в пиксельных шрифтах idle RPG).
+    /// Входной bitmap — Bgra8 Premultiplied (порядок байт: B, G, R, A).
+    /// Premultiplied-режим: R/G/B уже умножены на A/255. При A=255 (непрозрачный)
+    /// значения идентичны Straight. Для OCR-фикстур (JPG) alpha всегда 255.
+    /// </remarks>
+    private static SoftwareBitmap BinarizeWhite(SoftwareBitmap src, int threshold)
+    {
+        int w = src.PixelWidth;
+        int h = src.PixelHeight;
+        const int bpp = 4; // Bgra8
+        int stride = w * bpp;
+        byte[] pixels = new byte[stride * h];
+        src.CopyToBuffer(pixels.AsBuffer());
+
+        for (int i = 0; i < pixels.Length; i += bpp)
+        {
+            int b = pixels[i];
+            int g = pixels[i + 1];
+            int r = pixels[i + 2];
+            // alpha (pixels[i+3]) оставляем без изменений — нужен для Premultiplied-формата
+            int brightness = (r + g + b) / 3;
+            byte fill = brightness >= threshold ? (byte)255 : (byte)0;
+            pixels[i]     = fill; // B
+            pixels[i + 1] = fill; // G
+            pixels[i + 2] = fill; // R
+            // A остаётся как есть
+        }
+
+        SoftwareBitmap result = new(BitmapPixelFormat.Bgra8, w, h, BitmapAlphaMode.Premultiplied);
+        result.CopyFromBuffer(pixels.AsBuffer());
+        return result;
+    }
+
     // ── апскейл маленьких кропов ──────────────────────────────────────────────
 
     /// <summary>Целевой минимум меньшей стороны кропа для надёжного OCR.</summary>
@@ -365,24 +423,59 @@ public sealed class OcrReader : IOcrReader
     private const int MinOcrDimension = 96;
 
     /// <summary>
+    /// Целевой минимум меньшей стороны кропа для бинаризованных полей (ParseHint="binarize_white").
+    /// </summary>
+    /// <remarks>
+    /// Пиксельный bitmap-шрифт nextLocation (~15px высота глифов) требует более агрессивного
+    /// апскейла чем обычный текст: при стандартном MinOcrDimension=96 отдельные пиксели букв
+    /// сливаются после Fant-интерполяции и OCR не распознаёт глифы.
+    /// MinOcrDimensionBinarized=192 (×2 от стандарта) обеспечивает ~4-пиксельные штрихи
+    /// после апскейла, что достаточно для Windows.Media.Ocr.
+    /// </remarks>
+    private const int MinOcrDimensionBinarized = 192;
+
+    /// <summary>
+    /// Значение ParseHint, активирующее пороговую бинаризацию белого текста.
+    /// </summary>
+    /// <remarks>
+    /// Используется для полей с белым текстом на фоне с яркими цветными эффектами
+    /// (nextLocation — мелкий белый текст рядом с боевыми эффектами в MainZone).
+    /// При этом хинте: пиксели с яркостью ≥ <see cref="BinarizeWhiteThreshold"/> → белые;
+    /// остальные → чёрные. Убирает синие/жёлтые/зелёные эффекты, сохраняя белый текст.
+    /// </remarks>
+    public const string BinarizeWhiteParseHint = "binarize_white";
+
+    /// <summary>
+    /// Порог яркости (среднее R+G+B / 3) для бинаризации белого текста.
+    /// Пиксели с яркостью ≥ этого порога считаются «белыми» (текст), остальные — «чёрными» (фон).
+    /// </summary>
+    /// <remarks>
+    /// Значение 160 выбрано эмпирически: белый текст TBH имеет яркость ≥ 200,
+    /// а боевые эффекты (синий лёд, жёлтый урон) — яркость &lt; 140 в их доминирующем канале,
+    /// но суммарная яркость часто &lt; 160.
+    /// </remarks>
+    private const int BinarizeWhiteThreshold = 160;
+
+    /// <summary>
     /// Возвращает версию <paramref name="cropped"/>, увеличенную целочисленным множителем так,
-    /// чтобы меньшая сторона была не менее <see cref="MinOcrDimension"/> (Windows.Media.Ocr
+    /// чтобы меньшая сторона была не менее <paramref name="minOcrDimension"/> (Windows.Media.Ocr
     /// не распознаёт слишком маленькие изображения). Если апскейл не нужен — возвращает тот же объект.
     /// Масштаб ограничен <paramref name="maxDimension"/>, чтобы не превысить лимит движка.
     /// </summary>
     private static async Task<SoftwareBitmap> UpscaleForOcrAsync(
         SoftwareBitmap cropped,
         uint maxDimension,
+        int minOcrDimension,
         CancellationToken ct)
     {
         int w = cropped.PixelWidth;
         int h = cropped.PixelHeight;
         int minDim = Math.Min(w, h);
 
-        if (minDim <= 0 || minDim >= MinOcrDimension)
+        if (minDim <= 0 || minDim >= minOcrDimension)
             return cropped;
 
-        int scale = (int)Math.Ceiling((double)MinOcrDimension / minDim);
+        int scale = (int)Math.Ceiling((double)minOcrDimension / minDim);
         int cap = maxDimension > 0 ? (int)maxDimension : 4096;
 
         while (scale > 1 && ((long)w * scale > cap || (long)h * scale > cap))

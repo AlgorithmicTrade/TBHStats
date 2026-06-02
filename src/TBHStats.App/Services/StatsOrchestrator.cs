@@ -93,6 +93,30 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     private StageRef? _lastKnownStage;
     private IReadOnlyDictionary<int, int> _lastKnownChests = new Dictionary<int, int>();
 
+    /// <summary>Прогресс этапа из последнего кадра (визуальный детектор, [0..1]), null до первого кадра.</summary>
+    private double? _lastKnownStageProgress;
+    /// <summary>Признак боя с боссом из последнего кадра, null до первого кадра.</summary>
+    private bool? _lastKnownBossPresent;
+    /// <summary>Момент UTC, когда начался текущий сегмент этапа (привязан к визуальному прогрессу, T063 Phase 2 fix). null = таймер не запущен.</summary>
+    private DateTime? _stageSegmentStartUtc;
+    /// <summary>Последнее посчитанное время на этапе (секунды), null до первого старта сегмента.</summary>
+    private int? _lastKnownStageElapsedSeconds;
+    /// <summary>Был ли босс (BossPresent / прогресс ≈1.0) в ТЕКУЩЕМ сегменте — отличает «этап пройден» от «рестарт».</summary>
+    private bool _bossSeenInSegment;
+    /// <summary>
+    /// Начат ли текущий сегмент от НАБЛЮДАЕМОГО сброса прогресса (т.е. начало этапа было увидено).
+    /// false — сегмент стартован «с середины» (первый кадр после запуска виджета/возврата окна),
+    /// его длительность НЕ отражает полное время прохождения → при завершении по боссу НЕ сохраняется.
+    /// </summary>
+    private bool _segmentStartedFromReset;
+    /// <summary>Длительность последней ПРОЙДЕННОЙ (по боссу) попытки в секундах — показывается в скобках. null до первого прохождения.</summary>
+    private int? _lastCompletedStageSeconds;
+
+    /// <summary>Порог падения прогресса (абсолютный), трактуемый как граница сегмента (новый/перезапущенный этап).</summary>
+    private const double StageProgressDropThreshold = 0.10;
+    /// <summary>Порог прогресса, при котором считаем, что был бой с боссом (1.0 vs макс. пути ≈0.95).</summary>
+    private const double BossProgressThreshold = 0.99;
+
     // ── EMA-сглаживание темпов (FR-006; сглаживание дёрганья OCR по ~5 снимкам) ──
     // α = 2/(N+1), N=5 → 1/3. Сглаживаем публикуемые золото/ч и опыт/ч; «До уровня» считается
     // по сглаженному опыт/ч. null = ещё не инициализировано (первое значение берётся как есть).
@@ -109,6 +133,21 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
 
     /// <summary>Время последнего диагностического лога здоровья захвата (UTC). Throttle ~30 с.</summary>
     private DateTime _lastHealthLogUtc = DateTime.MinValue;
+
+    /// <summary>
+    /// Флаг «потеря окна уже обработана» — предотвращает повторный сброс <see cref="RunRecorder"/>
+    /// на каждой итерации цикла, пока окно остаётся недоступным (NotFound).
+    /// Сбрасывается в <c>false</c> при успешной обработке кадра (State=Capturing).
+    /// Waiting (окно свёрнуто) НЕ вызывает сброс: незавершённый забег должен быть продолжен
+    /// после восстановления окна — сохраняем накопители.
+    /// </summary>
+    private bool _windowLostHandled;
+
+    /// <summary>
+    /// Стабилизатор поля nextLocation: debounce 2 кадра + sanity по ResolveStageId.
+    /// Гасит транзиентный OCR-шум от фонового огня на локациях ~3-6..3-10 (ADR-008).
+    /// </summary>
+    private readonly NextLocationStabilizer _nextLocationStabilizer = new();
 
     // ── Управление петлёй ──────────────────────────────────────────────────
 
@@ -269,6 +308,31 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
             if (frame is null)
             {
                 PublishStaleSnapshot(_session.State);
+
+                // Сброс RunRecorder при полной потере окна (NotFound) — один раз на эпизод.
+                // Waiting (свёрнутое окно) не сбрасывается: игра ещё жива, незавершённый
+                // забег должен продолжиться после восстановления окна.
+                if (_session.State == CaptureState.NotFound && !_windowLostHandled)
+                {
+                    _windowLostHandled = true;
+                    _runRecorder?.Reset();
+                    _logger.LogDebug("RunRecorder сброшен: окно игры потеряно (NotFound).");
+
+                    // Сбросить сегментный таймер: при возврате окна не должно ложно сработать
+                    // «завершение по боссу» из-за устаревшего флага _bossSeenInSegment.
+                    // _lastCompletedStageSeconds НЕ сбрасываем — это историческая справка.
+                    _stageSegmentStartUtc    = null;
+                    _bossSeenInSegment       = false;
+                    _segmentStartedFromReset = false;
+                    _lastKnownStageProgress  = null;
+
+                    // Сбросить debounce-стрик nextLocation: после возврата окна на другом
+                    // этапе устаревший pending не должен мешать быстрому определению этапа.
+                    // Stable-значение также сбрасывается — потребует 2 кадра для нового этапа
+                    // (приемлемая задержка при восстановлении окна).
+                    _nextLocationStabilizer.Reset();
+                }
+
                 await DelayAsync(pollIntervalMs, ct).ConfigureAwait(false);
                 continue;
             }
@@ -304,6 +368,9 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
     {
         GameMechanicsConfig cfg = _gameMechanics.Current;
 
+        // Окно доступно — снимаем флаг «потеря окна» (следующая потеря снова вызовет Reset).
+        _windowLostHandled = false;
+
         // ── Детекция активной вкладки ────────────────────────────────────────
         TabRef? activeTab = null;
         RoiCalibration? activeTabRoi = FindActiveTabRoi(rois);
@@ -326,6 +393,24 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
 
         // ── Валидация → MetricSample ──────────────────────────────────────────
         MetricSample sample = _validator.Validate(obs, _lastReliableSample, ConfidenceThreshold);
+
+        // ── Стабилизация «Этап» (nextLocation) — оконное голосование + sanity ──
+        // Гасит транзиентный/флакирующий OCR-шум nextLocation (наблюдается в акте 3).
+        // Stabile-значение записывается обратно в sample.NextLocation — оно используется
+        // и в резолве StageId ниже, и в обновлении _lastKnownStage, и в RunRecorder.
+        sample.NextLocation = _nextLocationStabilizer.Observe(sample.NextLocation, cfg);
+
+        // ── Резолв StageId из NextLocation через конфиг (T063 Phase 3) ───────
+        // Текущий этап = nextLocation − 1 (тот же источник, что в _lastKnownStage).
+        // Резолв выполняется в оркестраторе: у валидатора нет конфига by design (ADR-009).
+        StageRef? currentStageRef = sample.NextLocation?.Previous();
+        sample.StageId = currentStageRef.HasValue ? cfg.ResolveStageId(currentStageRef.Value) : null;
+
+        // «Этап» берётся из nextLocation (MainZone, видна всегда) и НЕ зависит от чтения
+        // золота/опыта (sample.IsReliable). Обновляем каждый Capturing-кадр из стабилизированного
+        // значения; при отсутствии (null) держим последнее известное.
+        if (currentStageRef.HasValue)
+            _lastKnownStage = currentStageRef.Value;
 
         // ── Диагностика здоровья захвата (throttled ~30 с, только когда нет достоверных данных) ──
         if (!sample.IsReliable)
@@ -492,23 +577,82 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
 
         LiveRates rates = new(_emaGoldPerHour ?? 0.0, _emaXpPerHour ?? 0.0, _lastChestPerHour);
 
+        // ── Прогресс этапа / признак босса из текущего кадра ──────────────────
+        // prevProgress берём ДО обновления last-known — для детекции падения.
+        double? prevProgress = _lastKnownStageProgress;
+        if (obs.StageProgress.HasValue)
+            _lastKnownStageProgress = obs.StageProgress;
+        if (obs.BossPresent.HasValue)
+            _lastKnownBossPresent = obs.BossPresent;
+
+        // Босс в текущем сегменте: явный BossPresent ИЛИ прогресс ≈1.0 (бой), ADR-024.
+        if (obs.BossPresent == true ||
+            (obs.StageProgress is double bp && bp >= BossProgressThreshold))
+        {
+            _bossSeenInSegment = true;
+        }
+
+        // ── Сегментный таймер этапа, синхронизированный с ПРОГРЕССОМ (T063 Phase 2 fix) ──
+        // Прогресс по ходу этапа растёт; заметное падение = новый/перезапущенный этап → таймер с нуля.
+        DateTime segmentNow = DateTime.UtcNow;
+        if (obs.StageProgress is double cur)
+        {
+            bool progressDropped = prevProgress.HasValue
+                && cur < prevProgress.Value - StageProgressDropThreshold;
+
+            if (progressDropped)
+            {
+                // Перед падением был босс → этап ПРОЙДЕН: сохранить длительность завершённой попытки.
+                // НО только если завершаемый сегмент был начат от наблюдаемого сброса (начало этапа
+                // увидено) — иначе длительность считалась бы «с середины» (виджет запущен на фазе
+                // босса) и не отражала бы полное время прохождения.
+                if (_bossSeenInSegment && _segmentStartedFromReset && _stageSegmentStartUtc.HasValue)
+                {
+                    _lastCompletedStageSeconds =
+                        (int)Math.Max(0, (segmentNow - _stageSegmentStartUtc.Value).TotalSeconds);
+                }
+                // Падение без босса (рестарт/смерть) или сегмент «с середины» — длительность НЕ сохраняем.
+
+                // Вариант 2: в любом случае немедленно стартуем новый сегмент с нуля.
+                // Это падение — наблюдаемое начало нового этапа → сегмент валиден для учёта времени.
+                _stageSegmentStartUtc    = segmentNow;
+                _bossSeenInSegment       = false;
+                _segmentStartedFromReset = true;
+            }
+            else if (_stageSegmentStartUtc is null)
+            {
+                // Первый кадр с прогрессом — запустить таймер, но начало этапа НЕ наблюдалось
+                // (стартуем «с середины»): время этой попытки не сохраняем при завершении.
+                _stageSegmentStartUtc    = segmentNow;
+                _segmentStartedFromReset = false;
+            }
+        }
+
+        _lastKnownStageElapsedSeconds = _stageSegmentStartUtc.HasValue
+            ? (int)Math.Max(0, (segmentNow - _stageSegmentStartUtc.Value).TotalSeconds)
+            : null;
+
         // ── Собрать и опубликовать снимок ─────────────────────────────────────
         DateTime? lastReliableUtc = _lastReliableSample?.TakenAtUtc;
         bool isStale = IsSnapshotStale(CaptureState.Capturing, lastReliableUtc);
 
         PublishSnapshot(new LiveStatsSnapshot(
-            State:           CaptureState.Capturing,
-            Rates:           rates,
-            Gold:            _lastKnownGold,
-            Xp:              _lastKnownXp,
-            XpToLevel:       _lastKnownXpToLevel,
-            HeroLevel:       _lastKnownHeroLevel,
-            HeroClass:       _lastKnownHeroClass,
-            HeroDamage:      _lastKnownHeroDamage,
-            Stage:           _lastKnownStage,
-            LastReliableUtc: lastReliableUtc,
-            IsStale:         isStale,
-            Chests:          _lastKnownChests));
+            State:                        CaptureState.Capturing,
+            Rates:                        rates,
+            Gold:                         _lastKnownGold,
+            Xp:                           _lastKnownXp,
+            XpToLevel:                    _lastKnownXpToLevel,
+            HeroLevel:                    _lastKnownHeroLevel,
+            HeroClass:                    _lastKnownHeroClass,
+            HeroDamage:                   _lastKnownHeroDamage,
+            Stage:                        _lastKnownStage,
+            StageProgress:                _lastKnownStageProgress,
+            BossPresent:                  _lastKnownBossPresent,
+            StageElapsedSeconds:          _lastKnownStageElapsedSeconds,
+            LastCompletedStageSeconds:    _lastCompletedStageSeconds,
+            LastReliableUtc:              lastReliableUtc,
+            IsStale:                      isStale,
+            Chests:                       _lastKnownChests));
     }
 
     // ── Вспомогательные методы ─────────────────────────────────────────────────
@@ -522,19 +666,24 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         // Используем последние сглаженные темпы (EMA не обновляем — окно недоступно).
         LiveRates rates = new(_emaGoldPerHour ?? 0.0, _emaXpPerHour ?? 0.0, _lastChestPerHour);
 
+        // Таймер этапа НЕ инкрементируется — отдаём последнее посчитанное значение.
         PublishSnapshot(new LiveStatsSnapshot(
-            State:           state,
-            Rates:           rates,
-            Gold:            _lastKnownGold,
-            Xp:              _lastKnownXp,
-            XpToLevel:       _lastKnownXpToLevel,
-            HeroLevel:       _lastKnownHeroLevel,
-            HeroClass:       _lastKnownHeroClass,
-            HeroDamage:      _lastKnownHeroDamage,
-            Stage:           _lastKnownStage,
-            LastReliableUtc: _lastReliableSample?.TakenAtUtc,
-            IsStale:         true,
-            Chests:          _lastKnownChests));
+            State:                        state,
+            Rates:                        rates,
+            Gold:                         _lastKnownGold,
+            Xp:                           _lastKnownXp,
+            XpToLevel:                    _lastKnownXpToLevel,
+            HeroLevel:                    _lastKnownHeroLevel,
+            HeroClass:                    _lastKnownHeroClass,
+            HeroDamage:                   _lastKnownHeroDamage,
+            Stage:                        _lastKnownStage,
+            StageProgress:                _lastKnownStageProgress,
+            BossPresent:                  _lastKnownBossPresent,
+            StageElapsedSeconds:          _lastKnownStageElapsedSeconds,
+            LastCompletedStageSeconds:    _lastCompletedStageSeconds,
+            LastReliableUtc:              _lastReliableSample?.TakenAtUtc,
+            IsStale:                      true,
+            Chests:                       _lastKnownChests));
     }
 
     /// <summary>
@@ -589,14 +738,8 @@ public sealed class StatsOrchestrator : IStatsOrchestrator
         if (obs.HeroClassText is not null)
             _lastKnownHeroClass = obs.HeroClassText;
 
-        // Текущий этап = nextLocation − 1 (с переносом 10 этапов/акт, ADR-008).
-        // nextLocation — «следующая локация» из MainZone (current+1); вычитаем 1, чтобы показать ТЕКУЩИЙ этап.
-        if (sample.NextLocation.HasValue)
-        {
-            StageRef? current = sample.NextLocation.Value.Previous();
-            if (current.HasValue)
-                _lastKnownStage = current.Value;
-        }
+        // _lastKnownStage обновляется ВНЕ гейта IsReliable (сразу после резолва currentStageRef выше),
+        // т.к. nextLocation читается из MainZone (видна всегда) и не зависит от золота/опыта.
 
         // Счётчики сундуков транзиентны: обновляем ВСЕГДА при надёжном сэмпле,
         // даже если список пуст — отражает актуальное состояние OCR-кадра.

@@ -87,6 +87,8 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- Золото/час -->
@@ -302,8 +304,62 @@
                     ToolTipService.ToolTip="Следующая локация (текущий этап + 1)" />
             </Grid>
 
+            <!-- Прогресс этапа (% + ProgressBar) -->
+            <StackPanel
+                Grid.Row="9"
+                Spacing="2"
+                AutomationProperties.Name="Прогресс этапа">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Прогресс этапа"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        VerticalAlignment="Center" />
+                    <TextBlock
+                        Grid.Column="1"
+                        AutomationProperties.Name="Прогресс текущего этапа"
+                        AutomationProperties.LiveSetting="Polite"
+                        Text="{Binding StageProgressText}"
+                        Style="{StaticResource BodyTextBlockStyle}"
+                        FontWeight="SemiBold"
+                        VerticalAlignment="Center" />
+                </Grid>
+                <ProgressBar
+                    Minimum="0"
+                    Maximum="1"
+                    Value="{Binding StageProgress}" />
+            </StackPanel>
+
+            <!-- Время на текущем этапе (сегментный таймер) -->
+            <Grid Grid.Row="10" AutomationProperties.Name="Время этапа">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    Text="Время этапа"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    VerticalAlignment="Center" />
+                <TextBlock
+                    Grid.Column="1"
+                    AutomationProperties.Name="Время на текущем этапе"
+                    AutomationProperties.LiveSetting="Polite"
+                    Text="{Binding StageElapsedText}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    FontWeight="SemiBold"
+                    VerticalAlignment="Center"
+                    ToolTipService.ToolTip="Время текущего этапа; в скобках — длительность предыдущего пройденного этапа (по боссу)" />
+            </Grid>
+
             <!-- Статус + время обновления (устаревание) -->
-            <Grid Grid.Row="9" Margin="0,4,0,0">
+            <Grid Grid.Row="11" Margin="0,4,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />

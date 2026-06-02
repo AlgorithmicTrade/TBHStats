@@ -12,7 +12,7 @@ public sealed class GameMechanicsConfig
     /// <summary>Справочник типов сундуков (FR-002, ADR-011).</summary>
     public IReadOnlyList<ChestType> ChestTypes { get; init; }
 
-    /// <summary>Справочник классов героя (ADR-009). По умолчанию — пустой (открыты динамически).</summary>
+    /// <summary>Справочник классов героя (ADR-009). По умолчанию содержит один дефолтный «неопределённый» класс (FK-якорь); конкретные классы открываются динамически.</summary>
     public IReadOnlyList<HeroClass> HeroClasses { get; init; }
 
     /// <summary>Справочник вкладок интерфейса (9 разделов, ADR-008, FR-002b).</summary>
@@ -99,8 +99,14 @@ public sealed class GameMechanicsConfig
         // ── Stages: 3 × 2 × 10 = 60 ──────────────────────────────────────────
         Stage[] stages = BuildStages(acts, difficulties);
 
-        // ── HeroClasses (пустой — классы открываются динамически) ────────────
-        HeroClass[] heroClasses = [];
+        // ── HeroClasses: дефолтный «неопределённый» класс (FK-якорь для забегов) ──
+        // Справочник не может быть пустым: StageRun.Hero.HeroClassId — FK на HeroClass.Id;
+        // без хотя бы одной записи любая запись забега падает с FOREIGN KEY constraint failed.
+        // Конкретные классы открываются динамически (ADR-009); этот — фолбэк для нераспознанного героя.
+        HeroClass[] heroClasses =
+        [
+            new HeroClass { Id = 1, Key = "unknown", DisplayName = "Не определён", IsActive = true },
+        ];
 
         // ── FieldSourceBindings ───────────────────────────────────────────────
         FieldSourceBinding[] baseBindings =
@@ -159,6 +165,51 @@ public sealed class GameMechanicsConfig
             difficulties:        difficulties,
             stages:              stages,
             fieldSourceBindings: bindings);
+    }
+
+    /// <summary>
+    /// Резолвит суррогатный <see cref="Stage.Id"/> по <see cref="StageRef"/> через справочники
+    /// <see cref="Acts"/>/<see cref="Difficulties"/>/<see cref="Stages"/> (config-driven, ADR-009).
+    /// Возвращает <see langword="null"/>, если соответствующего акта, сложности или этапа в конфиге нет.
+    /// </summary>
+    /// <param name="stageRef">Идентификатор этапа (акт, сложность, номер).</param>
+    /// <returns>Суррогатный Id записи <see cref="Stage"/>, или <see langword="null"/> если не найден.</returns>
+    public int? ResolveStageId(StageRef stageRef)
+    {
+        // Найти акт по номеру
+        int actId = 0;
+        foreach (Act act in Acts)
+        {
+            if (act.Number == stageRef.ActNumber)
+            {
+                actId = act.Id;
+                break;
+            }
+        }
+        if (actId == 0)
+            return null;
+
+        // Найти сложность по ключу (OrdinalIgnoreCase: ключи машинные, но защита от регистра)
+        int difficultyId = 0;
+        foreach (Difficulty diff in Difficulties)
+        {
+            if (string.Equals(diff.Key, stageRef.DifficultyKey, StringComparison.OrdinalIgnoreCase))
+            {
+                difficultyId = diff.Id;
+                break;
+            }
+        }
+        if (difficultyId == 0)
+            return null;
+
+        // Найти этап по (ActId, DifficultyId, Number)
+        foreach (Stage stage in Stages)
+        {
+            if (stage.ActId == actId && stage.DifficultyId == difficultyId && stage.Number == stageRef.StageNumber)
+                return stage.Id;
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -427,7 +427,8 @@ public sealed class RunRecorder
     /// Резолвит Id класса героя по текстовому значению из OCR.
     /// Совпадение ищется по <see cref="HeroClass.Key"/> и <see cref="HeroClass.DisplayName"/>
     /// без учёта регистра. При отсутствии совпадения возвращает первый активный класс
-    /// (или 0 если список пуст) и помечает забег как partial.
+    /// (фолбэк — всегда Id=1 «Не определён» после сидинга) без пометки <c>isPartial</c>:
+    /// класс героя — метаданные и не влияет на корректность gold/xp/duration.
     /// </summary>
     private int ResolveHeroClassId(string? heroClassText, ref bool isPartial)
     {
@@ -463,20 +464,22 @@ public sealed class RunRecorder
             }
         }
 
-        // Фолбэк: первый активный класс.
+        // Фолбэк: первый активный класс (после сидинга — всегда Id=1 «Не определён»).
+        // Не помечаем забег partial: нераспознанный класс героя — метаданные,
+        // статистика gold/xp/duration остаётся корректной.
         foreach (HeroClass hc in heroClasses)
         {
             if (hc.IsActive)
             {
-                _logger.LogWarning(
-                    "RunRecorder: класс героя не распознан (текст='{Text}'); используется фолбэк Id={Id}. IsPartial=true.",
+                _logger.LogDebug(
+                    "RunRecorder: класс героя не распознан (текст='{Text}'); используется фолбэк Id={Id}.",
                     heroClassText, hc.Id);
-                isPartial = true;
                 return hc.Id;
             }
         }
 
-        // Список классов пуст (дефолтный конфиг v1 — классы открываются динамически).
+        // Защитная ветка: справочник HeroClasses пуст (после сидинга не достижимо).
+        // Если всё же случилось — помечаем partial, т.к. FK будет нарушен при Id=0.
         _logger.LogWarning(
             "RunRecorder: справочник HeroClasses пуст, класс героя не определён. IsPartial=true.");
         isPartial = true;

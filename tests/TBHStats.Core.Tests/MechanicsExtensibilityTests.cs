@@ -39,12 +39,12 @@ public sealed class MechanicsExtensibilityTests
             },
         };
 
-        // Добавляем класс героя (по умолчанию список пустой — открываются динамически)
+        // Добавляем класс героя (по умолчанию список содержит Id=1 «Не определён»; mage — второй)
         var extendedHeroClasses = new List<HeroClass>(defaults.HeroClasses)
         {
             new HeroClass
             {
-                Id          = 1,
+                Id          = 2,
                 Key         = "mage",
                 DisplayName = "Маг",
                 IsActive    = true,
@@ -124,9 +124,10 @@ public sealed class MechanicsExtensibilityTests
         // Arrange / Act
         var config = BuildExtendedConfig();
 
-        // Assert: по умолчанию пустой список, после расширения — один класс
-        config.HeroClasses.Should().HaveCount(1);
-        config.HeroClasses.Should().Contain(hc => hc.Key == "mage" && hc.Id == 1);
+        // Assert: дефолтный «Не определён» (Id=1) + новый «mage» (Id=2) = 2 класса
+        config.HeroClasses.Should().HaveCount(2);
+        config.HeroClasses.Should().Contain(hc => hc.Key == "unknown" && hc.Id == 1);
+        config.HeroClasses.Should().Contain(hc => hc.Key == "mage" && hc.Id == 2);
     }
 
     [Fact]
@@ -164,10 +165,11 @@ public sealed class MechanicsExtensibilityTests
         // Arrange / Act
         var mechanics = new GameMechanics();
 
-        // Assert
+        // Assert: дефолтный конфиг содержит 1 класс («Не определён», Id=1) — FK-якорь для забегов
         mechanics.Current.ChestTypes.Should().HaveCount(3);
         mechanics.Current.Tabs.Should().HaveCount(9);
-        mechanics.Current.HeroClasses.Should().BeEmpty();
+        mechanics.Current.HeroClasses.Should().HaveCount(1);
+        mechanics.Current.HeroClasses[0].Key.Should().Be("unknown");
     }
 
     [Fact]
@@ -179,10 +181,10 @@ public sealed class MechanicsExtensibilityTests
         // Act
         var mechanics = new GameMechanics(extendedConfig);
 
-        // Assert
+        // Assert: дефолтный «Не определён» (Id=1) + «mage» (Id=2) = 2 класса
         mechanics.Current.ChestTypes.Should().HaveCount(4);
         mechanics.Current.Tabs.Should().HaveCount(10);
-        mechanics.Current.HeroClasses.Should().HaveCount(1);
+        mechanics.Current.HeroClasses.Should().HaveCount(2);
     }
 
     [Fact]
@@ -195,10 +197,10 @@ public sealed class MechanicsExtensibilityTests
         // Act
         mechanics.Reload(extendedConfig);
 
-        // Assert: Current отражает новый конфиг сразу после Reload
+        // Assert: Current отражает новый конфиг сразу после Reload; дефолтный + mage = 2
         mechanics.Current.ChestTypes.Should().HaveCount(4);
         mechanics.Current.Tabs.Should().HaveCount(10);
-        mechanics.Current.HeroClasses.Should().HaveCount(1);
+        mechanics.Current.HeroClasses.Should().HaveCount(2);
     }
 
     [Fact]

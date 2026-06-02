@@ -104,6 +104,22 @@ public sealed partial class LiveStatsViewModel : ObservableObject
     private string _stageText = "—";
 
     // ──────────────────────────────────────────────────────────────
+    // Прогресс и таймер этапа
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>Прогресс текущего этапа ∈ [0..1] для ProgressBar.Value (0.0 при отсутствии данных).</summary>
+    [ObservableProperty]
+    private double _stageProgress;
+
+    /// <summary>Прогресс этапа для отображения: «49 %», «Босс» или «—».</summary>
+    [ObservableProperty]
+    private string _stageProgressText = "—";
+
+    /// <summary>Время на текущем этапе в формате «2м 05с», «12с» или «—».</summary>
+    [ObservableProperty]
+    private string _stageElapsedText = "—";
+
+    // ──────────────────────────────────────────────────────────────
     // Состояния (T031)
     // ──────────────────────────────────────────────────────────────
 
@@ -213,6 +229,13 @@ public sealed partial class LiveStatsViewModel : ObservableObject
         GoldText  = s.Gold  is long g ? FormatLong(g) : "—";
         // «Этап» показываем как «акт-этап» (напр. «3-1»); сложность в MainZone не отображается.
         StageText = s.Stage is StageRef sr ? $"{sr.ActNumber}-{sr.StageNumber}" : "—";
+
+        // Прогресс и таймер этапа
+        StageProgress     = s.StageProgress ?? 0.0;
+        StageProgressText = s.BossPresent == true
+            ? "Босс"
+            : (s.StageProgress is double sp ? sp.ToString("P0") : "—");
+        StageElapsedText  = BuildStageElapsedText(s.StageElapsedSeconds, s.LastCompletedStageSeconds);
 
         // Состояния (T031)
         IsGameFound = s.State != CaptureState.NotFound;
@@ -331,5 +354,38 @@ public sealed partial class LiveStatsViewModel : ObservableObject
             }));
 
         return result.Length > 0 ? result : "—";
+    }
+
+    /// <summary>
+    /// Форматирует время на этапе (секунды) в строку «2м 05с» / «12с» / «1ч 02м 03с».
+    /// Возвращает «—» при null или &lt;0. При 0 возвращает «0с» (первая секунда живого таймера).
+    /// Потолок «> 99ч» не применяется — для этапа он не нужен.
+    /// </summary>
+    private static string FormatElapsed(int? seconds)
+    {
+        if (seconds is not int total || total < 0)
+            return "—";
+
+        int h   = total / 3600;
+        int m   = (total % 3600) / 60;
+        int sec = total % 60;
+
+        if (h > 0)
+            return $"{h}ч {m:D2}м {sec:D2}с";
+        if (m > 0)
+            return $"{m}м {sec:D2}с";
+        return $"{sec}с";
+    }
+
+    /// <summary>
+    /// «{живой таймер} ({время предыдущей пройденной попытки})», напр. «1м 23с (2м 05с)».
+    /// Скобки добавляются только если есть длительность предыдущей пройденной попытки.
+    /// </summary>
+    private static string BuildStageElapsedText(int? elapsed, int? lastCompleted)
+    {
+        string live = FormatElapsed(elapsed);
+        return lastCompleted is int prev && prev > 0
+            ? $"{live} ({FormatElapsed(prev)})"
+            : live;
     }
 }

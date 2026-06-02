@@ -34,6 +34,20 @@ namespace TBHStats.App.Services;
 /// Счётчики транзиентны: отражают значения последнего OCR-кадра, не накапливаются между итерациями.
 /// Никогда не null — при отсутствии данных возвращается пустой словарь.
 /// </param>
+/// <param name="StageProgress">
+/// Прогресс текущего этапа ∈ [0..1] (последнее известное значение из визуального детектора).
+/// Null, если данные ещё не поступали.
+/// </param>
+/// <param name="BossPresent">
+/// Признак активного боя с боссом этапа (последнее известное значение). Null, если нет данных.
+/// </param>
+/// <param name="StageElapsedSeconds">
+/// Время на текущем этапе в секундах (сегментный таймер; сбрасывается при смене этапа). Null, если нет данных.
+/// </param>
+/// <param name="LastCompletedStageSeconds">
+/// Длительность предыдущей ПРОЙДЕННОЙ (по боссу) попытки в секундах; показывается в скобках для сравнения.
+/// Null до первого прохождения.
+/// </param>
 public sealed record LiveStatsSnapshot(
     CaptureState State,
     LiveRates Rates,
@@ -44,6 +58,10 @@ public sealed record LiveStatsSnapshot(
     string? HeroClass,
     long? HeroDamage,
     StageRef? Stage,
+    double? StageProgress,
+    bool? BossPresent,
+    int? StageElapsedSeconds,
+    int? LastCompletedStageSeconds,
     DateTime? LastReliableUtc,
     bool IsStale,
     IReadOnlyDictionary<int, int> Chests)
@@ -53,16 +71,20 @@ public sealed record LiveStatsSnapshot(
     /// Используется как начальное значение <see cref="IStatsOrchestrator.Current"/> до первой итерации.
     /// </summary>
     public static readonly LiveStatsSnapshot Empty = new(
-        State:           CaptureState.NotFound,
-        Rates:           new LiveRates(0, 0, new Dictionary<int, double>()),
-        Gold:            null,
-        Xp:              null,
-        XpToLevel:       null,
-        HeroLevel:       null,
-        HeroClass:       null,
-        HeroDamage:      null,
-        Stage:           null,
-        LastReliableUtc: null,
-        IsStale:         true,
-        Chests:          new Dictionary<int, int>());
+        State:                        CaptureState.NotFound,
+        Rates:                        new LiveRates(0, 0, new Dictionary<int, double>()),
+        Gold:                         null,
+        Xp:                           null,
+        XpToLevel:                    null,
+        HeroLevel:                    null,
+        HeroClass:                    null,
+        HeroDamage:                   null,
+        Stage:                        null,
+        StageProgress:                null,
+        BossPresent:                  null,
+        StageElapsedSeconds:          null,
+        LastCompletedStageSeconds:    null,
+        LastReliableUtc:              null,
+        IsStale:                      true,
+        Chests:                       new Dictionary<int, int>());
 }

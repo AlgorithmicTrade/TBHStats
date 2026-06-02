@@ -45,6 +45,22 @@ public static class DatabaseInitializer
     public static void ConfigureSqlite(DbContextOptionsBuilder<TbhStatsDbContext> optionsBuilder, string dbPath)
         => optionsBuilder.UseSqlite(GetConnectionString(dbPath));
 
+    // Поля, требующие предобработки binarize_white (мелкий пиксельный шрифт + яркие эффекты MainZone).
+    // verified: только nextLocation. heroLevel читается штатно без бинаризации (T066).
+    private const string BinarizeWhiteHint = "binarize_white";
+
+    /// <summary>
+    /// Возвращает дефолтный <c>ParseHint</c> для поля ROI-калибровки.
+    /// Поле <c>nextLocation</c> требует предобработки <c>binarize_white</c>
+    /// (мелкий пиксельный шрифт; verified T066). Все остальные поля — <c>null</c>.
+    /// </summary>
+    /// <param name="fieldKey">Ключ поля, напр. <c>"nextLocation"</c>, <c>"gold"</c>.</param>
+    /// <returns><c>"binarize_white"</c> для <c>nextLocation</c>; иначе <c>null</c>.</returns>
+    private static string? DefaultParseHintFor(string fieldKey)
+        => string.Equals(fieldKey, "nextLocation", StringComparison.OrdinalIgnoreCase)
+            ? BinarizeWhiteHint
+            : null;
+
     /// <summary>
     /// Применяет все ожидающие миграции EF Core и выполняет идемпотентный сидинг игровых механик.
     /// </summary>
@@ -65,6 +81,11 @@ public static class DatabaseInitializer
 
         // 3. Сидинг синглтонов состояния приложения.
         await SeedSingletonsAsync(db, ct).ConfigureAwait(false);
+
+        // 4. Self-heal: проставить binarize_white существующему nextLocation-ROI с пустым хинтом.
+        //    (БД создана до фикса; координаты пользователя сохраняем — меняем только хинт.)
+        //    Выполняется при каждом запуске — идемпотентно. НЕ перезаписывает явно заданный хинт.
+        await HealNextLocationParseHintAsync(db, ct).ConfigureAwait(false);
     }
 
     // ── Сидинг справочников и этапов ─────────────────────────────────────────
@@ -130,12 +151,30 @@ public static class DatabaseInitializer
                     W         = 0.0,
                     H         = 0.0,
                     OcrEngine = OcrEngine.WindowsMediaOcr,
-                    ParseHint = null,
+                    ParseHint = DefaultParseHintFor(binding.FieldKey),
                 });
             }
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
         }
+    }
+
+    // ── Self-heal ROI ParseHint ───────────────────────────────────────────────
+
+    private static async Task HealNextLocationParseHintAsync(TbhStatsDbContext db, CancellationToken ct)
+    {
+        // Обновляем nextLocation-ROI с пустым/null хинтом через bulk ExecuteUpdateAsync.
+        // — RoiCalibration.ParseHint объявлен как init-only (неизменяемая модель Core),
+        //   поэтому изменить его через change tracker невозможно — используем прямой SQL-UPDATE.
+        // — НЕ трогаем записи с уже заданным (непустым) хинтом: уважаем явный выбор пользователя.
+        // — Координаты X/Y/W/H не перечислены в SetProperty — SQLite их не обновляет.
+        await db.RoiCalibrations
+            .Where(r => r.FieldKey == "nextLocation"
+                        && (r.ParseHint == null || r.ParseHint == string.Empty))
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(r => r.ParseHint, BinarizeWhiteHint),
+                ct)
+            .ConfigureAwait(false);
     }
 
     // ── Сидинг синглтонов (WidgetSettings, OptimizationProfile) ──────────────

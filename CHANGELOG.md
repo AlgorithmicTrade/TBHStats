@@ -5,12 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased]
 
 ## [0.1.9] - 2026-06-01
 
 ### Added
 - **Chests**: визуальный детектор сундуков по цвету плашки + счёт точек (временно отключён) (3109258)
+  - **Capture/Chests** (новое): `ChestDotCounter` (счёт точек по яркости), `ChestPanelAnalyzer` (тип по цвету плашки), `ChestZoneAnalyzer` (зонная локализация группы плашек + счёт по рядам); эволюция решения ADR-021 → ADR-022 → ADR-023.
+  - **Core**: тип `PanelColor` + якоря цвета плашек (brown/blue/red) в `GameMechanicsConfig` (config-driven, ADR-009); EF-ignore — без миграции, история валидна.
+  - **App**: проверка chest-ROI в калибровке через визуальный детектор (тип+точки), а не OCR; строки «Сундуки» и «Сундуки/ч» в виджете скрыты (`Visibility=Collapsed`).
+  - **Отключено по решению пользователя**: `FieldExtractor.ChestDetectionEnabled=false` — на живой игре подсчёт требует доработки (многорядность 6+, плотные ряды, масштаб окна); код детекторов и тесты на реальных фикстурах (chests.jpg 1/1/2, main.jpg 3/3) сохранены как база для возврата. Сборка 0/0; тесты Core 262 / Capture 110 / Data 64.
 
 ## [0.1.8] - 2026-06-01
 

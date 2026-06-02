@@ -5,6 +5,7 @@ using TBHStats.App.ViewModels;
 using TBHStats.Capture;
 using TBHStats.Capture.Chests;
 using TBHStats.Capture.Ocr;
+using TBHStats.Capture.Progress;
 using TBHStats.Capture.Roi;
 using TBHStats.Capture.Tabs;
 using TBHStats.Capture.WindowTracking;
@@ -80,6 +81,10 @@ public static class Composition
         // Singleton: per-экземпляр кэш буфера кадра, thread-safe через lock.
         services.AddSingleton<IChestZoneAnalyzer, ChestZoneAnalyzer>();
 
+        // StageProgressReader: визуальная детекция прогрессбара этапа по цвету заливки
+        // (фиолетовый = путь, синий = босс; ADR-024). Singleton: per-экземпляр кэш буфера кадра, thread-safe через lock.
+        services.AddSingleton<IStageProgressReader, StageProgressReader>();
+
         // FieldExtractor зависит от IOcrReader, IValueParser, IChestPanelAnalyzer (ADR-022 legacy fallback)
         // и IChestZoneAnalyzer (ADR-023 приоритетный путь).
         // IChestLayoutResolver больше не используется в пайплайне (сохранён в Core для возможных расширений).
@@ -131,7 +136,8 @@ public static class Composition
                 sp.GetRequiredService<ICaptureSession>(),
                 sp.GetRequiredService<IOcrReader>(),
                 sp.GetRequiredService<IChestPanelAnalyzer>(),
-                sp.GetRequiredService<IChestZoneAnalyzer>()));
+                sp.GetRequiredService<IChestZoneAnalyzer>(),
+                sp.GetRequiredService<IStageProgressReader>()));
 
         // StatsOrchestrator: singleton, зависит от сингтонов Capture/Core и scoped Data.
         // Scoped ISettingsRepository доступен через IServiceScopeFactory внутри петли

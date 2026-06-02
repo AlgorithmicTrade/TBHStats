@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using TBHStats.Capture;
 using TBHStats.Capture.Chests;
 using TBHStats.Capture.Ocr;
+using TBHStats.Capture.Progress;
 using TBHStats.Capture.Wgc;
 using TBHStats.Core.Mechanics;
 using TBHStats.Core.Models;
@@ -30,6 +31,7 @@ public sealed partial class CalibrationViewModel : ObservableObject
     private readonly IOcrReader _ocrReader;
     private readonly IChestPanelAnalyzer _chestPanelAnalyzer;
     private readonly IChestZoneAnalyzer _chestZoneAnalyzer;
+    private readonly IStageProgressReader _stageProgressReader;
 
     // Последний захваченный кадр; удерживается для команды TestSelectedRoiOcrAsync.
     // Диспозится при каждом новом захвате (удерживается максимум один кадр).
@@ -124,13 +126,15 @@ public sealed partial class CalibrationViewModel : ObservableObject
     /// <param name="ocrReader">Движок OCR для живого предпросмотра текстовых ROI.</param>
     /// <param name="chestPanelAnalyzer">Визуальный анализатор одиночной плашки сундука (тип по цвету + число точек).</param>
     /// <param name="chestZoneAnalyzer">Зонный анализатор: локализует все плашки в широкой ROI и считает точки по рядам (ADR-023).</param>
+    /// <param name="stageProgressReader">Визуальный детектор прогрессбара этапа (фиолетовый/синий, ADR-024) для предпросмотра ROI «stageProgress».</param>
     public CalibrationViewModel(
         ISettingsRepository settings,
         IGameMechanics gameMechanics,
         ICaptureSession captureSession,
         IOcrReader ocrReader,
         IChestPanelAnalyzer chestPanelAnalyzer,
-        IChestZoneAnalyzer chestZoneAnalyzer)
+        IChestZoneAnalyzer chestZoneAnalyzer,
+        IStageProgressReader stageProgressReader)
     {
         _settings = settings;
         _gameMechanics = gameMechanics;
@@ -138,6 +142,7 @@ public sealed partial class CalibrationViewModel : ObservableObject
         _ocrReader = ocrReader;
         _chestPanelAnalyzer = chestPanelAnalyzer;
         _chestZoneAnalyzer = chestZoneAnalyzer;
+        _stageProgressReader = stageProgressReader;
 
         GameMechanicsConfig cfg = gameMechanics.Current;
 
@@ -426,6 +431,36 @@ public sealed partial class CalibrationViewModel : ObservableObject
                 {
                     OcrPreviewText = "(плашка не распознана)";
                     OcrPreviewStatus = "Тип сундука не определён: ROI должна покрывать цветную плашку целиком";
+                }
+
+                return;
+            }
+
+            // Прогрессбар этапа: визуальный детектор цвета заливки (ADR-024), не OCR.
+            // Фиолетовая заливка = прогресс пути, синяя = бой с боссом. Текста в баре нет —
+            // OCR по этой ROI всегда пуст, поэтому используем StageProgressReader.
+            if (roi.FieldKey == "stageProgress")
+            {
+                // Не используем ConfigureAwait(false): возвращаемся на UI-поток для присваивания свойств.
+                StageProgressDiagnostic d = await _stageProgressReader.DiagnoseAsync(_lastFrame, roi, ct);
+
+                // Диагностическая строка: размер ROI, счётчики колонок, средний цвет заливки —
+                // помогает откалибровать ROI «на глаз» на живом кадре (видно, ловится ли цвет).
+                string diag = $"ROI {d.RoiWidthPx}×{d.RoiHeightPx}px · фиол={d.PurpleColumns} син={d.BlueColumns} "
+                            + $"тёмн={d.DarkColumns} проч={d.OtherColumns} · образец RGB({d.SampleR},{d.SampleG},{d.SampleB})";
+
+                if (d.Progress is double progress)
+                {
+                    bool boss = d.BossPresent == true;
+                    OcrPreviewText = $"Прогресс: {progress * 100.0:F0}% · босс: {(boss ? "да" : "нет")}";
+                    OcrPreviewStatus = (boss
+                        ? "Бой с боссом этапа (синяя заливка) → завершение близко · "
+                        : "Прогресс пути этапа (фиолетовая заливка); полная полоса ≈ 95% · ") + diag;
+                }
+                else
+                {
+                    OcrPreviewText = "(бар не распознан)";
+                    OcrPreviewStatus = "Прогрессбар не найден: ROI должна покрывать горизонтальный бар (правый-нижний угол MainZone, без иконки слева) · " + diag;
                 }
 
                 return;

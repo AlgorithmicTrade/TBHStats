@@ -1,5 +1,6 @@
 using TBHStats.Capture.Chests;
 using TBHStats.Capture.Ocr;
+using TBHStats.Capture.Progress;
 using TBHStats.Core.Mechanics;
 using TBHStats.Core.Models;
 using TBHStats.Core.Parsing;
@@ -20,6 +21,11 @@ namespace TBHStats.Capture;
 /// (FieldKey «chestZone»): одна ROI охватывает всю группу плашек, тип определяется по
 /// цвету фона, счёт точек масштабонезависим. Если «chestZone»-ROI нет — fallback на
 /// per-ROI путь через <see cref="IChestPanelAnalyzer"/> (ADR-022, legacy).
+///
+/// Прогрессбар этапа (ADR-024): FieldKey <c>"stageProgress"</c> → вызывает <see cref="IStageProgressReader"/>
+/// (цветовой анализ пикселей: фиолетовый = путь, синий = босс). Результат заносится в
+/// <see cref="RawObservation.StageProgress"/> и <see cref="RawObservation.BossPresent"/>.
+/// FieldKey <c>"bossPresent"</c> отдельно не читается — boss извлекается из stageProgress-ROI.
 /// </remarks>
 public sealed class FieldExtractor : IFieldExtractor
 {
@@ -27,6 +33,7 @@ public sealed class FieldExtractor : IFieldExtractor
     private readonly IValueParser _parser;
     private readonly IChestPanelAnalyzer _chestPanelAnalyzer;
     private readonly IChestZoneAnalyzer _chestZoneAnalyzer;
+    private readonly IStageProgressReader _stageProgressReader;
 
     /// <summary>
     /// Признак включённости обнаружения сундуков (chest:*/chestZone).
@@ -42,26 +49,42 @@ public sealed class FieldExtractor : IFieldExtractor
     private static readonly bool ChestDetectionEnabled = false;
 
     /// <summary>
+    /// Признак включённости визуальной детекции прогресса этапа (ADR-024).
+    /// </summary>
+    /// <remarks>
+    /// При <c>true</c> FieldKey <c>"stageProgress"</c> обрабатывается через
+    /// <see cref="IStageProgressReader"/> (цветовой анализ фиолетовый/синий),
+    /// результат записывается в <see cref="RawObservation.StageProgress"/> и
+    /// <see cref="RawObservation.BossPresent"/>.
+    /// При <c>false</c> поля остаются null (поведение до T063).
+    /// </remarks>
+    private static readonly bool StageProgressDetectionEnabled = true;
+
+    /// <summary>
     /// Создаёт экземпляр <see cref="FieldExtractor"/>.
     /// </summary>
     /// <param name="ocr">OCR-ридер для считывания ROI-областей.</param>
     /// <param name="parser">Парсер игровых значений (числа, время, идентификаторы этапов).</param>
     /// <param name="chestPanelAnalyzer">Визуальный анализатор плашки сундука: тип по цвету + счёт точек (ADR-022, legacy per-ROI путь).</param>
     /// <param name="chestZoneAnalyzer">Зонный анализатор группы плашек: локализация по цвету + счёт по рядам (ADR-023, приоритетный путь).</param>
+    /// <param name="stageProgressReader">Визуальный детектор прогрессбара этапа: фиолетовый/синий анализ (ADR-024).</param>
     public FieldExtractor(
         IOcrReader ocr,
         IValueParser parser,
         IChestPanelAnalyzer chestPanelAnalyzer,
-        IChestZoneAnalyzer chestZoneAnalyzer)
+        IChestZoneAnalyzer chestZoneAnalyzer,
+        IStageProgressReader stageProgressReader)
     {
         ArgumentNullException.ThrowIfNull(ocr);
         ArgumentNullException.ThrowIfNull(parser);
         ArgumentNullException.ThrowIfNull(chestPanelAnalyzer);
         ArgumentNullException.ThrowIfNull(chestZoneAnalyzer);
+        ArgumentNullException.ThrowIfNull(stageProgressReader);
         _ocr = ocr;
         _parser = parser;
         _chestPanelAnalyzer = chestPanelAnalyzer;
         _chestZoneAnalyzer = chestZoneAnalyzer;
+        _stageProgressReader = stageProgressReader;
     }
 
     /// <inheritdoc/>
@@ -88,6 +111,8 @@ public sealed class FieldExtractor : IFieldExtractor
         string? heroClassText = null;
         string? stageText = null;
         StageRef? nextLocation = null;
+        double? stageProgressValue = null;
+        bool? bossPresentValue = null;
 
         Dictionary<int, int>     chests         = [];
         Dictionary<int, double>  chestBestMatch = []; // typeId → лучший PanelMatch (legacy per-ROI)
@@ -102,9 +127,30 @@ public sealed class FieldExtractor : IFieldExtractor
             if (roi.FieldKey == "activeTab")
                 continue;
 
-            // Визуальные поля — не текстовые, OCR их не читает (v1; детекция в T035)
-            if (roi.FieldKey is "stageProgress" or "bossPresent")
+            // bossPresent отдельно не читается — boss извлекается из stageProgress-ROI (ADR-024).
+            if (roi.FieldKey == "bossPresent")
                 continue;
+
+            // Прогрессбар этапа: визуальный анализ цвета (фиолетовый/синий), не OCR (ADR-024).
+            if (roi.FieldKey == "stageProgress")
+            {
+                if (StageProgressDetectionEnabled)
+                {
+                    StageProgressReading reading = await _stageProgressReader
+                        .ReadAsync(frame, roi, cfg, ct)
+                        .ConfigureAwait(false);
+
+                    if (reading.Progress.HasValue)
+                    {
+                        stageProgressValue = reading.Progress;
+                        bossPresentValue   = reading.BossPresent;
+                        perFieldConfidence["stageProgress"] = 1.0;
+                        perFieldConfidence["bossPresent"]   = 1.0;
+                    }
+                    // Если null — данных нет, оставляем stageProgressValue/bossPresentValue null
+                }
+                continue;
+            }
 
             string fieldKey = roi.FieldKey;
 
@@ -287,8 +333,8 @@ public sealed class FieldExtractor : IFieldExtractor
             Xp                 = xp,
             XpToLevel          = xpToLevel,
             StageTimeSeconds   = stageTimeSeconds,
-            StageProgress      = null,   // v1: визуальное поле, детекция в T035
-            BossPresent        = null,   // v1: визуальное поле, детекция в T035
+            StageProgress      = stageProgressValue,
+            BossPresent        = bossPresentValue,
             HeroLevel          = heroLevel,
             HeroDamage         = heroDamage,
             HeroClassText      = heroClassText,

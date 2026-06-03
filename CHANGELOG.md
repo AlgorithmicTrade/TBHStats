@@ -7,10 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-03
+
+### Added
+- **App**: взвешенные по времени gold/h·exp/h и колонка времени в Compare + иконка приложения (17639fb)
+
 ## [0.2.1] - 2026-06-02
 
 ### Added
 - **UI**: статистика сессии в виджете, переключатель Забег⇄Сессия и перекомпоновка панели (e6fb54c)
+  - **Режим «Сессия»**: переключатель `Забег ⇄ Сессия` (CheckBox «Session», `LiveStatsViewModel.IsSessionView`) меняет видимый блок панели статов (виден один блок) через `BoolToInverseVisibilityConverter`/`BoolToVisibilityConverter`. Блок «Сессия» показывает суммарно полученное золото/опыт, пройдено этапов, получено уровней и время работы виджета с момента запуска.
+  - **Накопление за сессию** (`StatsOrchestrator.AccumulateSession`, рядом с сегментной логикой): золото — все положительные дельты между надёжными кадрами; опыт — с компенсацией level-up; этапы — завершённые по боссу; уровни — суммарный прирост уровня героя; аптайм (`_sessionStartUtc`) тикает непрерывно (включая Waiting/NotFound). Обнуляется при перезапуске процесса (single-window app). 5 полей `Session*` в `LiveStatsSnapshot`.
+  - **Убран показ урона (DPS)** из строки «Hero» виджета (`HeroDamage`/`HeroDamageText` удалены из `LiveStatsViewModel`); данные урона продолжают сохраняться в БД через `RunRecorder`.
+  - **Перекомпоновка панели**: переключатель «Session» — к левому краю; чекбокс «On top» перенесён в строку статов справа; кнопки «Hide game»/«Compare»/«Calibration» — к левому краю.
+  - Документация: `ARCHITECTURE.md` §7. Сборка App 0/0; portable self-contained publish (без триминга) проверен.
 
 ## [0.2.0] - 2026-06-02
 

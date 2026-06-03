@@ -127,14 +127,14 @@
 | `StageId` | int (PK, FK → Stage) | |
 | **All-time (вся история, справка/тренды)** | | |
 | `RunCount` | int | число учтённых (не partial) забегов всего |
-| `AvgGoldPerHour` / `BestGoldPerHour` | double | (FR-008) по всей истории |
-| `AvgXpPerHour` / `BestXpPerHour` | double | по всей истории |
+| `AvgGoldPerHour` / `BestGoldPerHour` | double | (FR-008) по всей истории. `Avg*` — **взвешенно по времени** `Σgold/Σdur·3600` (= средн.золото/этап ÷ средн.время/этап · 3600, сглаживает всплески, ADR-027); `Best*` — макс. по-рановых rate |
+| `AvgXpPerHour` / `BestXpPerHour` | double | по всей истории; `Avg*` — взвешенно по времени (как `AvgGoldPerHour`, ADR-027) |
 | `AvgDurationSeconds` / `BestDurationSeconds` | double/int | по всей истории |
 | `ChestRatePerHour` | map ChestTypeId→double | темп сундуков по типам, вся история |
 | **Recent window (свежее окно — основа ранжирования/рекомендации)** | | |
 | `RecentRunCount` | int | число non-partial забегов в окне (≤ `OptimizationProfile.RecentWindowSize`) |
-| `RecentAvgGoldPerHour` / `RecentBestGoldPerHour` | double | по последним N non-partial забегам |
-| `RecentAvgXpPerHour` / `RecentBestXpPerHour` | double | по окну |
+| `RecentAvgGoldPerHour` / `RecentBestGoldPerHour` | double | по последним N non-partial забегам; `RecentAvg*` — взвешенно по времени (ADR-027) |
+| `RecentAvgXpPerHour` / `RecentBestXpPerHour` | double | по окну; `RecentAvg*` — взвешенно по времени (ADR-027) |
 | `RecentAvgDurationSeconds` / `RecentBestDurationSeconds` | double/int | по окну |
 | `RecentChestRatePerHour` | map ChestTypeId→double | темп сундуков по окну |
 | **Power-context окна (прокси силы отряда)** | | |

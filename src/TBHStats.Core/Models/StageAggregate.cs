@@ -22,7 +22,7 @@ public sealed class StageAggregate
     /// <summary>Число учтённых (IsPartial = false) забегов этапа.</summary>
     public int RunCount { get; set; }
 
-    /// <summary>Среднее золото в час по учтённым забегам.</summary>
+    /// <summary>Золото в час по учтённым забегам, взвешенное по времени (Σ золота / Σ длительности · 3600). Сглаживает всплески коротких или длинных забегов.</summary>
     public double AvgGoldPerHour { get; set; }
 
     /// <summary>Лучшее золото в час среди учтённых забегов.</summary>
@@ -31,7 +31,7 @@ public sealed class StageAggregate
     /// <summary>Среднее абсолютное золото за один забег по учтённым (non-partial) забегам.</summary>
     public double AvgGoldGained { get; set; }
 
-    /// <summary>Средний опыт в час по учтённым забегам.</summary>
+    /// <summary>Опыт в час по учтённым забегам, взвешенный по времени (Σ опыта / Σ длительности · 3600). Сглаживает всплески коротких или длинных забегов.</summary>
     public double AvgXpPerHour { get; set; }
 
     /// <summary>Лучший опыт в час среди учтённых забегов.</summary>
@@ -66,7 +66,7 @@ public sealed class StageAggregate
     public int RecentRunCount { get; set; }
 
     /// <summary>
-    /// Среднее золото в час по свежему окну.
+    /// Золото в час по свежему окну, взвешенное по времени (Σ золота / Σ длительности · 3600). Сглаживает всплески коротких или длинных забегов.
     /// Ранжирование (FR-009) использует это поле при <c>AggregationScope.Recent</c>.
     /// </summary>
     public double RecentAvgGoldPerHour { get; set; }
@@ -77,7 +77,7 @@ public sealed class StageAggregate
     /// </summary>
     public double RecentBestGoldPerHour { get; set; }
 
-    /// <summary>Средний опыт в час по свежему окну.</summary>
+    /// <summary>Опыт в час по свежему окну, взвешенный по времени (Σ опыта / Σ длительности · 3600). Сглаживает всплески коротких или длинных забегов.</summary>
     public double RecentAvgXpPerHour { get; set; }
 
     /// <summary>Лучший опыт в час по свежему окну.</summary>

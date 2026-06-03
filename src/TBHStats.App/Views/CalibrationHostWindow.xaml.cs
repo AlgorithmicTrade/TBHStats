@@ -17,6 +17,7 @@ public sealed partial class CalibrationHostWindow : Window
 
         AppWindow.Resize(new Windows.Graphics.SizeInt32(900, 650));
         AppWindow.Title = "TBHStats — Калибровка ROI";
+        AppWindow.SetIcon("Assets/AppIcon.ico");
 
         // Navigate после InitializeComponent, когда Frame готов.
         CalibrationFrame.Navigate(typeof(CalibrationView));

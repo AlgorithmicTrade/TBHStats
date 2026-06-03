@@ -30,10 +30,10 @@ public sealed class StageAggregateCalculator : IStageAggregateCalculator
 
             // ── All-time ──
             RunCount             = completed.Count,
-            AvgGoldPerHour       = Average(completed, r => r.GoldPerHour),
+            AvgGoldPerHour       = WeightedRatePerHour(completed, r => r.GoldGained),
             BestGoldPerHour      = Max(completed, r => r.GoldPerHour),
             AvgGoldGained        = Average(completed, r => (double)r.GoldGained),
-            AvgXpPerHour         = Average(completed, r => r.XpPerHour),
+            AvgXpPerHour         = WeightedRatePerHour(completed, r => r.XpGained),
             BestXpPerHour        = Max(completed, r => r.XpPerHour),
             AvgXpGained          = Average(completed, r => (double)r.XpGained),
             AvgDurationSeconds   = Average(completed, r => r.DurationSeconds),
@@ -41,10 +41,10 @@ public sealed class StageAggregateCalculator : IStageAggregateCalculator
 
             // ── Recent ──
             RecentRunCount            = window.Count,
-            RecentAvgGoldPerHour      = Average(window, r => r.GoldPerHour),
+            RecentAvgGoldPerHour      = WeightedRatePerHour(window, r => r.GoldGained),
             RecentBestGoldPerHour     = Max(window, r => r.GoldPerHour),
             RecentAvgGoldGained       = Average(window, r => (double)r.GoldGained),
-            RecentAvgXpPerHour        = Average(window, r => r.XpPerHour),
+            RecentAvgXpPerHour        = WeightedRatePerHour(window, r => r.XpGained),
             RecentBestXpPerHour       = Max(window, r => r.XpPerHour),
             RecentAvgXpGained         = Average(window, r => (double)r.XpGained),
             RecentAvgDurationSeconds  = Average(window, r => r.DurationSeconds),
@@ -96,6 +96,23 @@ public sealed class StageAggregateCalculator : IStageAggregateCalculator
         }
 
         return rates;
+    }
+
+    /// <summary>
+    /// Темп накопления ресурса в час по набору забегов <paramref name="source"/>,
+    /// взвешенный по времени: Σ gained / Σ DurationSeconds * 3600.
+    /// При нулевой суммарной длительности возвращает 0.
+    /// </summary>
+    private static double WeightedRatePerHour(List<StageRun> source, Func<StageRun, long> gainedSelector)
+    {
+        long totalGained   = 0;
+        long totalDuration = 0;
+        foreach (var run in source)
+        {
+            totalGained   += gainedSelector(run);
+            totalDuration += run.DurationSeconds;
+        }
+        return totalDuration == 0 ? 0.0 : (double)totalGained / totalDuration * 3600.0;
     }
 
     /// <summary>

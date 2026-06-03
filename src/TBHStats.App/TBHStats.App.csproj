@@ -9,6 +9,13 @@
       и совместимости с Windows 10+. Необходим и в packaged, и в unpackaged режиме.
     -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!--
+      ApplicationIcon встраивает .ico как Win32-иконку группы в exe → иконка файла в Explorer
+      и иконка окна/таскбара по умолчанию (unpackaged). Иконка извлечена из оригинального
+      TaskBarHero.exe (RT_GROUP_ICON, 9 размеров 16–256, 32bpp). Дополнительно окна выставляют
+      её в рантайме через AppWindow.SetIcon("Assets/AppIcon.ico").
+    -->
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Platforms>x86;x64;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
     <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
@@ -133,7 +140,26 @@
   <PropertyGroup>
     <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
     <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
-    <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
-    <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
+    <!--
+      PublishTrimmed=false ВСЕГДА: тримминг для WinUI 3 официально не поддерживается
+      (XAML/reflection, MRT Core, CsWinRT-проекции) — обрезка ломает приложение в рантайме.
+    -->
+    <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
+
+  <!--
+    Пост-publish копирование Assets в publish-папку.
+    dotnet publish для WinUI 3 (unpackaged) не копирует физические файлы Assets в publish/
+    (там остаётся только *.pri-индекс). Но иконка (AppWindow.SetIcon) и шрифты Baloo2
+    (ms-appx:///Assets/Fonts/*.ttf) загружаются по пути с диска — без них portable-сборка
+    теряет иконку окна и игровые шрифты. Копируем рекурсивно рядом с exe.
+  -->
+  <Target Name="CopyAssetsToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_TbhAssetsToPublish Include="$(ProjectDir)Assets\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_TbhAssetsToPublish)"
+          DestinationFiles="@(_TbhAssetsToPublish->'$(PublishDir)Assets\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

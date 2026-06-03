@@ -254,7 +254,7 @@ public sealed partial class CompareViewModel : ObservableObject
                     ? dl
                     : string.Empty;
 
-                (double goldPH, double xpPH, double avgGold, double avgXp, int runCount) =
+                (double goldPH, double xpPH, double avgGold, double avgXp, double avgDuration, int runCount) =
                     SelectScopeMetrics(agg, profile.Scope);
 
                 bool isRecommended = bestRanking is not null
@@ -279,6 +279,8 @@ public sealed partial class CompareViewModel : ObservableObject
                     AvgXpGained      = avgXp,
                     AvgGoldText      = FormatAmount(avgGold),
                     AvgXpText        = FormatAmount(avgXp),
+                    AvgDurationSeconds = avgDuration,
+                    AvgDurationText    = FormatDuration(avgDuration),
                     RunCount         = runCount,
                     PowerText        = BuildPowerText(ranking.Power),
                     IsStalePower     = isStalePower,
@@ -416,12 +418,12 @@ public sealed partial class CompareViewModel : ObservableObject
     /// <summary>
     /// Выбирает значения метрик и счётчик забегов по выбранному scope.
     /// </summary>
-    private static (double goldPH, double xpPH, double avgGold, double avgXp, int runCount) SelectScopeMetrics(
+    private static (double goldPH, double xpPH, double avgGold, double avgXp, double avgDuration, int runCount) SelectScopeMetrics(
         StageAggregate agg, AggregationScope scope)
     {
         return scope == AggregationScope.Recent
-            ? (agg.RecentAvgGoldPerHour, agg.RecentAvgXpPerHour, agg.RecentAvgGoldGained, agg.RecentAvgXpGained, agg.RecentRunCount)
-            : (agg.AvgGoldPerHour,       agg.AvgXpPerHour,       agg.AvgGoldGained,       agg.AvgXpGained,       agg.RunCount);
+            ? (agg.RecentAvgGoldPerHour, agg.RecentAvgXpPerHour, agg.RecentAvgGoldGained, agg.RecentAvgXpGained, agg.RecentAvgDurationSeconds, agg.RecentRunCount)
+            : (agg.AvgGoldPerHour,       agg.AvgXpPerHour,       agg.AvgGoldGained,       agg.AvgXpGained,       agg.AvgDurationSeconds,       agg.RunCount);
     }
 
     /// <summary>
@@ -492,4 +494,18 @@ public sealed partial class CompareViewModel : ObservableObject
     /// Например: 12 345.6 → «12 346».
     /// </summary>
     private static string FormatAmount(double value) => value <= 0 ? "0" : value.ToString("N0");
+
+    /// <summary>
+    /// Форматирует среднюю длительность забега (секунды) как «m:ss» (или «h:mm:ss» при ≥1 ч).
+    /// Значение ≤ 0 → «—».
+    /// </summary>
+    private static string FormatDuration(double seconds)
+    {
+        if (seconds <= 0) return "—";
+        int total = (int)Math.Round(seconds);
+        int h = total / 3600;
+        int m = (total % 3600) / 60;
+        int s = total % 60;
+        return h > 0 ? $"{h}:{m:D2}:{s:D2}" : $"{m}:{s:D2}";
+    }
 }

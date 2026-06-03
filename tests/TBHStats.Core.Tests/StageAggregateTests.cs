@@ -115,7 +115,8 @@ public sealed class StageAggregateTests
         var agg = _sut.Compute(5, runs, recentWindowSize: 10, chestTypeIds: Array.Empty<int>());
 
         agg.RunCount.Should().Be(2);
-        agg.AvgGoldPerHour.Should().BeApproximately((3600.0 + 10800.0) / 2.0, 1e-6);
+        // Взвешенно по времени: (3600+5400)/(3600+1800)*3600 = 9000/5400*3600 = 6000.0
+        agg.AvgGoldPerHour.Should().BeApproximately(6000.0, 1e-6);
         agg.BestGoldPerHour.Should().BeApproximately(10800.0, 1e-6);
         agg.AvgDurationSeconds.Should().BeApproximately((3600.0 + 1800.0) / 2.0, 1e-6);
         agg.BestDurationSeconds.Should().Be(1800); // min = лучший
@@ -143,13 +144,12 @@ public sealed class StageAggregateTests
         agg.RecentRunCount.Should().Be(2);
 
         // mid GoldPerHour = 7200/1800*3600 = 14400; fresh = 3600/900*3600 = 14400
-        double midGph   = (double)7200 / 1800 * 3600;
-        double freshGph = (double)3600 / 900  * 3600;
-        agg.RecentAvgGoldPerHour.Should().BeApproximately((midGph + freshGph) / 2.0, 1e-6);
+        // Взвешенно по времени: (7200+3600)/(1800+900)*3600 = 10800/2700*3600 = 14400.0
+        agg.RecentAvgGoldPerHour.Should().BeApproximately(14400.0, 1e-6);
 
         // old не попал в recent, но входит в all-time avg
-        double oldGph = (double)1800 / 3600 * 3600;
-        agg.AvgGoldPerHour.Should().BeApproximately((oldGph + midGph + freshGph) / 3.0, 1e-6);
+        // Взвешенно по времени: (1800+7200+3600)/(3600+1800+900)*3600 = 12600/6300*3600 = 7200.0
+        agg.AvgGoldPerHour.Should().BeApproximately(7200.0, 1e-6);
     }
 
     // ────────────────────────────────────────────────────────────

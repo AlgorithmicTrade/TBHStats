@@ -92,14 +92,35 @@ public static class DatabaseInitializer
 
     /// <summary>
     /// Идемпотентный бэкфилл устаревших агрегатов: пересчитывает <see cref="StageAggregate"/>
-    /// для этапов, у которых есть забеги с <c>GoldGained &gt; 0</c> или <c>XpGained &gt; 0</c>,
-    /// но агрегат имеет <c>AvgGoldGained == 0 &amp;&amp; AvgXpGained == 0</c> (пост-миграционное состояние).
+    /// для этапов, попадающих хотя бы под одно из двух условий:
+    /// <list type="bullet">
+    ///   <item><description>
+    ///     <b>Пост-миграционные нули</b>: агрегат имеет <c>AvgGoldGained == 0 &amp;&amp; AvgXpGained == 0</c>,
+    ///     хотя в таблице забегов есть non-partial записи с <c>GoldGained &gt; 0</c> или <c>XpGained &gt; 0</c>.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <b>Рассинхронизация формулы gold/h</b>: сохранённый <c>AvgGoldPerHour</c> существенно отличается
+    ///     от взвешенного значения <c>AvgGoldGained / AvgDurationSeconds * 3600</c>, вычисленного
+    ///     по уже сохранённым скалярам. Это происходит после смены формулы агрегации
+    ///     (старая формула — «среднее по-рановых», новая — «взвешенная по времени»).
+    ///   </description></item>
+    /// </list>
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Вызывается из composition root (<c>App.xaml.cs</c>) после <see cref="InitializeAsync"/>,
     /// используя тот же DI-scope (доступ к <see cref="IStageAggregateRepository"/>
     /// и <see cref="OptimizationProfile"/>).
-    /// Условие самоотключается после первого успешного пересчёта (поля станут &gt; 0).
+    /// </para>
+    /// <para>
+    /// Оба условия самоотключаются после первого успешного пересчёта:
+    /// <c>AvgGoldGained</c>/<c>AvgXpGained</c> становятся &gt; 0, а <c>AvgGoldPerHour</c>
+    /// совпадёт с взвешенным значением в пределах порога <c>tolerance</c>.
+    /// </para>
+    /// <para>
+    /// Детекция formula-mismatch использует только скалярные поля агрегата (AsNoTracking)
+    /// без загрузки забегов — O(агрегатов), а не O(забегов).
+    /// </para>
     /// </remarks>
     /// <param name="db">Контекст EF Core.</param>
     /// <param name="aggregateRepo">Репозиторий агрегатов (для вызова RecomputeForStageAsync).</param>
@@ -115,8 +136,9 @@ public static class DatabaseInitializer
         ILogger?                    logger,
         CancellationToken           ct = default)
     {
-        // Находим stageId, где есть хотя бы один run с gained>0, но агрегат не пересчитан.
-        // Критерий «устаревший»: AvgGoldGained==0 && AvgXpGained==0 при наличии реальных данных.
+        // ── Ветка 1: пост-миграционные нули ──────────────────────────────────
+        // Критерий: AvgGoldGained==0 && AvgXpGained==0, хотя в StageRuns есть
+        // non-partial записи с gained>0 для этого этапа.
         var stageIdsWithRuns = await db.StageRuns
             .Where(r => !r.IsPartial && (r.GoldGained > 0 || r.XpGained > 0))
             .Select(r => r.StageId)
@@ -124,32 +146,66 @@ public static class DatabaseInitializer
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
-        if (stageIdsWithRuns.Count == 0)
-        {
-            return;
-        }
+        var staleByZero = stageIdsWithRuns.Count > 0
+            ? await db.StageAggregates
+                .Where(a => stageIdsWithRuns.Contains(a.StageId)
+                            && a.AvgGoldGained == 0.0
+                            && a.AvgXpGained == 0.0)
+                .Select(a => a.StageId)
+                .ToListAsync(ct)
+                .ConfigureAwait(false)
+            : new List<int>();
 
-        var staleStageIds = await db.StageAggregates
-            .Where(a => stageIdsWithRuns.Contains(a.StageId)
-                        && a.AvgGoldGained == 0.0
-                        && a.AvgXpGained == 0.0)
-            .Select(a => a.StageId)
+        // ── Ветка 2: рассинхронизация формулы gold/h ─────────────────────────
+        // Загружаем все агрегаты с RunCount>0 (AsNoTracking — только скаляры, без ChestRates).
+        // Ожидаемое взвешенное значение: AvgGoldGained / AvgDurationSeconds * 3600.
+        // Если отличие от сохранённого AvgGoldPerHour превышает tolerance —
+        // агрегат посчитан старой формулой («среднее по-рановых rate»).
+        //
+        // Tolerance: относительный + абсолютный порог, чтобы не реагировать на float-шум.
+        // При RunCount==1 обе формулы дают одинаковый результат — порог их не различит.
+        var allAggregates = await db.StageAggregates
+            .AsNoTracking()
+            .Where(a => a.RunCount > 0)
+            .Select(a => new { a.StageId, a.AvgGoldPerHour, a.AvgGoldGained, a.AvgDurationSeconds })
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
-        if (staleStageIds.Count == 0)
+        var staleByFormula = allAggregates
+            .Where(a =>
+            {
+                if (a.AvgDurationSeconds <= 0.0)
+                    return false;
+                double expectedGold = a.AvgGoldGained / a.AvgDurationSeconds * 3600.0;
+                double tolerance = Math.Max(1.0, expectedGold * 1e-4);
+                return Math.Abs(a.AvgGoldPerHour - expectedGold) > tolerance;
+            })
+            .Select(a => a.StageId)
+            .ToList();
+
+        // ── Объединяем оба набора ─────────────────────────────────────────────
+        var toRecompute = staleByZero
+            .Union(staleByFormula)
+            .Distinct()
+            .ToList();
+
+        if (toRecompute.Count == 0)
         {
             return;
         }
 
-        foreach (int stageId in staleStageIds)
+        foreach (int stageId in toRecompute)
         {
             await aggregateRepo
                 .RecomputeForStageAsync(stageId, recentWindowSize, ct)
                 .ConfigureAwait(false);
         }
 
-        logger?.LogInformation("Backfill: пересчитано {Count} устаревших агрегатов.", staleStageIds.Count);
+        logger?.LogInformation(
+            "Backfill: пересчитано {Total} агрегатов ({Zero} по нулевым полям, {Formula} по рассинхронизации формулы gold/h).",
+            toRecompute.Count,
+            staleByZero.Count,
+            staleByFormula.Count);
     }
 
     // ── Сидинг справочников и этапов ─────────────────────────────────────────

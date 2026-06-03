@@ -58,6 +58,12 @@ public sealed class CompareStageRow
     /// <summary>Средний опыт за забег, отформатированный для отображения («12 345»).</summary>
     public required string AvgXpText { get; init; }
 
+    /// <summary>Среднее время прохождения этапа в секундах по выбранному scope (числовое значение).</summary>
+    public required double AvgDurationSeconds { get; init; }
+
+    /// <summary>Среднее время прохождения, отформатированное («m:ss» или «h:mm:ss», «—» если нет данных).</summary>
+    public required string AvgDurationText { get; init; }
+
     /// <summary>Число забегов в выбранном scope.</summary>
     public required int RunCount { get; init; }
 

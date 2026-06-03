@@ -68,6 +68,9 @@ public sealed partial class WidgetWindow : Window
         AppWindow.Resize(new SizeInt32(320, 270));
         AppWindow.Title = "TBHStats";
 
+        // Иконка окна/таскбара (unpackaged): .ico рядом с exe (Content → Assets/AppIcon.ico).
+        AppWindow.SetIcon("Assets/AppIcon.ico");
+
         // Применить сохранённые настройки (позиция, topmost) после загрузки.
         Activated += OnFirstActivated;
 

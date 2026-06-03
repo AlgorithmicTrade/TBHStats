@@ -127,6 +127,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="30" />
                             <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="64" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
@@ -138,21 +139,25 @@
                                    HorizontalAlignment="Center" />
                         <TextBlock Grid.Column="1" Text="Stage"
                                    Style="{StaticResource GameTableHeaderTextStyle}" />
-                        <TextBlock Grid.Column="2" Text="Gold"
+                        <TextBlock Grid.Column="2" Text="Time"
+                                   Style="{StaticResource GameTableHeaderTextStyle}"
+                                   HorizontalAlignment="Right"
+                                   ToolTipService.ToolTip="Average stage completion time (over saved runs)" />
+                        <TextBlock Grid.Column="3" Text="Gold"
                                    Style="{StaticResource GameTableHeaderTextStyle}"
                                    HorizontalAlignment="Right"
                                    ToolTipService.ToolTip="Average gold per run (over saved runs)" />
-                        <TextBlock Grid.Column="3" Text="Gold/h"
+                        <TextBlock Grid.Column="4" Text="Gold/h"
                                    Style="{StaticResource GameTableHeaderTextStyle}"
                                    HorizontalAlignment="Right" />
-                        <TextBlock Grid.Column="4" Text="Exp"
+                        <TextBlock Grid.Column="5" Text="Exp"
                                    Style="{StaticResource GameTableHeaderTextStyle}"
                                    HorizontalAlignment="Right"
                                    ToolTipService.ToolTip="Average exp per run (over saved runs)" />
-                        <TextBlock Grid.Column="5" Text="Exp/h"
+                        <TextBlock Grid.Column="6" Text="Exp/h"
                                    Style="{StaticResource GameTableHeaderTextStyle}"
                                    HorizontalAlignment="Right" />
-                        <TextBlock Grid.Column="6" Text="Runs"
+                        <TextBlock Grid.Column="7" Text="Runs"
                                    Style="{StaticResource GameTableHeaderTextStyle}"
                                    HorizontalAlignment="Right" />
                     </Grid>
@@ -182,6 +187,7 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="30" />
                                     <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="64" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="*" />
@@ -208,9 +214,19 @@
                                     FontSize="12"
                                     Foreground="{StaticResource GameValueBrush}" />
 
-                                <!-- Gold (avg per run) -->
+                                <!-- Time (avg run duration) -->
                                 <TextBlock
                                     Grid.Column="2"
+                                    Text="{Binding AvgDurationText}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Right"
+                                    FontFamily="{StaticResource GameBodyFont}"
+                                    FontSize="12"
+                                    Foreground="{StaticResource GameValueBrush}" />
+
+                                <!-- Gold (avg per run) -->
+                                <TextBlock
+                                    Grid.Column="3"
                                     Text="{Binding AvgGoldText}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
@@ -220,7 +236,7 @@
 
                                 <!-- Gold/h -->
                                 <TextBlock
-                                    Grid.Column="3"
+                                    Grid.Column="4"
                                     Text="{Binding GoldPerHourText}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
@@ -230,7 +246,7 @@
 
                                 <!-- Exp (avg per run) -->
                                 <TextBlock
-                                    Grid.Column="4"
+                                    Grid.Column="5"
                                     Text="{Binding AvgXpText}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
@@ -240,7 +256,7 @@
 
                                 <!-- Exp/h -->
                                 <TextBlock
-                                    Grid.Column="5"
+                                    Grid.Column="6"
                                     Text="{Binding XpPerHourText}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"
@@ -250,7 +266,7 @@
 
                                 <!-- Runs -->
                                 <TextBlock
-                                    Grid.Column="6"
+                                    Grid.Column="7"
                                     Text="{Binding RunCount}"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right"

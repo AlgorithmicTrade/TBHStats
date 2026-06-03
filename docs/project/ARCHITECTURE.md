@@ -327,7 +327,9 @@ await DatabaseInitializer.BackfillStaleAggregatesAsync(db, aggregateRepo, profil
 - Заголовок таблицы: `GameHeaderBorderStyle` + `GameLabelTextStyle` для всех колонок.
 - Строки таблицы: `FontFamily=GameBodyFont`, `Foreground=GameValueBrush`; ★ в цвете `GameHeaderForegroundBrush`.
 - Пустое состояние: `FontFamily=GameBodyFont`, `Foreground=GameSecondaryTextBrush`.
-- Все видимые строки переведены на английский: «Stage», «Gold», «Gold/h», «Exp», «Exp/h», «Runs», «No data — play stages to accumulate history», «Optimization goal», «Gold/h», «Exp/h», «Recommended: …», «No data for recommendation».
+- Все видимые строки переведены на английский: «Stage», «Time», «Gold», «Gold/h», «Exp», «Exp/h», «Runs», «No data — play stages to accumulate history», «Optimization goal», «Gold/h», «Exp/h», «Recommended: …», «No data for recommendation».
+- **Колонка «Time» (среднее время прохождения этапа)**: между «Stage» и «Gold». Значение — среднее `DurationSeconds` забегов по выбранному scope (`StageAggregate.AvgDurationSeconds` / `RecentAvgDurationSeconds`, уже агрегируется калькулятором), формат `m:ss` / `h:mm:ss`, «—» при отсутствии данных (`CompareViewModel.FormatDuration`). `CompareStageRow.AvgDurationSeconds`/`AvgDurationText`, проброс через расширенный `SelectScopeMetrics` (6-кортеж). Сегментная длительность определяется так же, как gold/xp за ран (сброс прогресса → босс → сброс прогресса, см. §9).
+- **Формула «Gold/h» / «Exp/h» в таблице сравнения — взвешенная по времени (ADR-027)**: `AvgGoldPerHour`/`AvgXpPerHour` (и `Recent*`) считаются `Σ(gained)/Σ(DurationSeconds)·3600` = `средн.золото_за_этап / средн.время_этапа · 3600`, что сглаживает всплески при разовом получении. Так считают и ранжирование (`OptimizationService`), и отображение Compare — числа консистентны с порядком строк. **Виджет НЕ затронут**: живые темпы (`LiveStatsSnapshot.Rates`, §9) считаются независимо и формулу не меняли.
 - `CompareViewModel.FormatRate` возвращает суффикс `/h` (было `/ч`); `BuildPowerText` использует `"lv."` / `"dmg"` (было `"ур."` / `"урон"`).
 - **Кнопка «Графики» из виджета убрана (T064):** функционал графиков временно отключён — окно `ChartsHostWindow`/`ChartsView`/`ChartsViewModel` остаётся в коде (см. ниже), но точки входа из виджета нет. В виджете: чекбокс «Поверх окон» + кнопки «Скрыть игру», «Сравнение», «Калибровка».
 - **Keyboard accelerators (T053 A11y)**: Alt+C — сравнение, Alt+K — калибровка (Alt+G «графики» снят вместе с кнопкой). Все кнопки и чекбокс имеют `AutomationProperties.Name` и `AutomationProperties.AutomationId`.
@@ -659,6 +661,13 @@ Capturing ──(низкая уверенность OCR)───────�
 - **Целевой TFM**: `net8.0-windows10.0.22621.0` (WinRT-проекции через CsWinRT / Windows SDK).
 - **Предпочтительно MSIX** (packaged) — надёжный доступ к WinRT (WGC/OCR), идентичность приложения, автообновления.
 - **Unpackaged / self-contained** (один `.exe`) — опционально для «portable»-сборки; требует установленного .NET 8 desktop runtime и тщательной проверки WinRT-вызовов.
+
+### Иконка приложения
+
+- **Файл иконки**: `src/TBHStats.App/Assets/AppIcon.ico` (9 размеров 16–256 px, 32bpp) — извлечена из оригинального `TaskBarHero.exe` (PE-ресурс `RT_GROUP_ICON`).
+- **Иконка `.exe`** (Explorer + дефолт окна/таскбара, unpackaged): свойство `<ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>` в csproj — встраивается в apphost как Win32 icon group.
+- **Иконка окон в рантайме**: `AppWindow.SetIcon("Assets/AppIcon.ico")` вызывается в конструкторе каждого top-level окна (`WidgetWindow` — главное; `CompareHostWindow`, `CalibrationHostWindow`, `ChartsHostWindow`) — каждое окно = отдельная кнопка таскбара со своей иконкой. `MainWindow` — мёртвый код шаблона (главное окно — `WidgetWindow`, создаётся в `App.OnLaunched`).
+- **MSIX-плитки** (`Square*Logo`/`StoreLogo` PNG в `Assets/`) остаются дефолтными шаблонными — релевантны только для packaged-режима (Start menu / Store), на иконку `.exe` и окна не влияют.
 
 ### Режимы поставки (T048)
 

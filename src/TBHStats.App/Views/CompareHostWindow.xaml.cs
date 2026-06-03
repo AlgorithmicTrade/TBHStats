@@ -56,6 +56,7 @@ public sealed partial class CompareHostWindow : Window
         // Default size; may be overridden by persisted placement in OnFirstActivated.
         AppWindow.Resize(new SizeInt32(820, 600));
         AppWindow.Title = "TBHStats — Stage Comparison";
+        AppWindow.SetIcon("Assets/AppIcon.ico");
 
         // Navigate to CompareView after InitializeComponent (frame is ready).
         CompareFrame.Navigate(typeof(CompareView));

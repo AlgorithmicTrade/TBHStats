@@ -17,6 +17,7 @@ public sealed partial class ChartsHostWindow : Window
 
         AppWindow.Resize(new Windows.Graphics.SizeInt32(860, 700));
         AppWindow.Title = "TBHStats — Тренды";
+        AppWindow.SetIcon("Assets/AppIcon.ico");
 
         // Navigate после InitializeComponent, когда Frame готов.
         ChartsFrame.Navigate(typeof(ChartsView));
